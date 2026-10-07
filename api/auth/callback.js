@@ -19,7 +19,7 @@ module.exports = async (req,res)=>{
     const clientId=process.env.DERIV_OAUTH_CLIENT_ID;
     if(!clientId) return res.status(500).send('DERIV_OAUTH_CLIENT_ID is not configured.');
     const origin=process.env.DERIV_REDIRECT_URI ? new URL(process.env.DERIV_REDIRECT_URI).origin : (req.headers['x-forwarded-proto']||'https')+'://'+req.headers.host;
-    const redirectUri=process.env.DERIV_REDIRECT_URI || origin+'/callback';
+    const redirectUri=process.env.DERIV_REDIRECT_URI || origin+'/api/auth/callback';
     const body=new URLSearchParams({
       grant_type:'authorization_code',
       client_id:clientId,
