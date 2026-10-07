@@ -392,10 +392,11 @@
     let socket = null;
     let running = false;
     let digits = [];
-    let reconnectTimer = null;
-    let reconnectAttempts = 0;
     let currentMarket = null;
     let derivMarkets = [];
+    let keepAliveTimer = null;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
 
     const engine = new StrictQuantEngine();
     let parityChart, barrierChart;
@@ -460,7 +461,8 @@
 
     function connectSocket() {
         if (!running) return;
-        if (socket) { try { socket.close(); } catch (_) {} }
+        if (socket) { try { socket.onclose = null; socket.close(); } catch (_) {} }
+        if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
         updateConnectionStatus('connecting');
         socket = new WebSocket('wss://api.derivws.com/trading/v1/options/ws/public');
 
@@ -468,6 +470,11 @@
             reconnectAttempts = 0;
             updateConnectionStatus('live');
             socket.send(JSON.stringify({ active_symbols: 'brief', req_id: 1 }));
+            keepAliveTimer = setInterval(() => {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ ping: 1, req_id: 99 }));
+                }
+            }, 30000);
         };
         socket.onmessage = (msg) => {
             if (!running) return;
@@ -510,10 +517,13 @@
                 setSignalUI('ERROR', 0, 'FAIL', 'Invalid market-data message received.', 'var(--accent-red)');
             }
         };
-        socket.onerror = () => updateConnectionStatus('offline');
+        socket.onerror = () => {
+            if (running) updateConnectionStatus('reconnecting');
+        };
         socket.onclose = () => {
-            updateConnectionStatus('offline');
+            if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
             if (running) scheduleReconnect();
+            else updateConnectionStatus('offline');
         };
     }
 
@@ -574,7 +584,8 @@
 
     function scheduleReconnect() {
         if (!running || reconnectTimer) return;
-        const delay = Math.min(15000, 1000 * Math.pow(2, reconnectAttempts++));
+        const delay = Math.min(10000, 1500 + reconnectAttempts * 1500);
+        reconnectAttempts = Math.min(reconnectAttempts + 1, 6);
         updateConnectionStatus('reconnecting');
         reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
@@ -595,9 +606,10 @@
         running = false;
         if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         if (socket) {
-            socket.close();
+            try { socket.onclose = null; socket.close(); } catch (_) {}
             socket = null;
         }
+        if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
         updateConnectionStatus('offline');
         setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
     }
