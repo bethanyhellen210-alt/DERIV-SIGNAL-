@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deriv Quant Engine - Single Contract Advisor</title>
+    <title>ELISY254 DERIV SIGNAL ENGINE</title>
 
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -202,14 +202,14 @@
         .badge-pass { background: #15803d; color: white; }
         .badge-fail { background: #b91c1c; color: white; }
         .badge-wait { background: #334155; color: white; }
-    </style>
+            .status{display:inline-block;margin:8px auto 0;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.6px}.status-live{background:#14532d;color:#86efac}.status-connecting,.status-reconnecting{background:#78350f;color:#fde68a}.status-offline{background:#450a0a;color:#fca5a5}\n    </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="header">
-        <h1>DERIV QUANTITATIVE ANALYSIS ENGINE</h1>
-        <p>Single Contract Selector • Strict Statistical Significance Filters (No Fake Entries)</p>
+    <div class="header">\n        <div id="connectionStatus" class="status status-offline">● OFFLINE</div>
+        <h1>ELISY254 DERIV SIGNAL ENGINE</h1>
+        <p>LIVE DERIV TICK ANALYSIS • STATISTICAL SIGNAL FILTERS</p>
     </div>
 
     <!-- Controls Bar -->
@@ -395,7 +395,7 @@
     // ==========================================
     let socket = null;
     let running = false;
-    let digits = [];
+    let digits = [];\n    let reconnectTimer = null;\n    let reconnectAttempts = 0;\n    let currentMarket = null;
 
     const engine = new StrictQuantEngine();
     let parityChart, barrierChart;
@@ -452,41 +452,79 @@
         stopEngine();
         digits = [];
         running = true;
+        currentMarket = document.getElementById('market').value;
+        reconnectAttempts = 0;
+        updateDashboard();
+        connectSocket();
+    }
 
-        const market = document.getElementById('market').value;
+    function connectSocket() {
+        if (!running) return;
+        if (socket) { try { socket.close(); } catch (_) {} }
+        updateConnectionStatus('connecting');
         socket = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
 
         socket.onopen = () => {
-            socket.send(JSON.stringify({ ticks: market, subscribe: 1 }));
+            reconnectAttempts = 0;
+            updateConnectionStatus('live');
+            socket.send(JSON.stringify({ ticks: currentMarket, subscribe: 1 }));
         };
-
         socket.onmessage = (msg) => {
             if (!running) return;
-            const data = JSON.parse(msg.data);
-
-            if (data.tick) {
-                const quote = data.tick.quote;
-                const digit = parseInt(quote.toString().slice(-1));
-
-                digits.push(digit);
-                if (digits.length > 100) digits.shift(); // Keep last 100 sample ticks
-
-                updateDashboard();
+            try {
+                const data = JSON.parse(msg.data);
+                if (data.error) {
+                    setSignalUI('ERROR', 0, 'FAIL', data.error.message || 'Deriv returned an error.', 'var(--accent-red)');
+                    try { socket.close(); } catch (_) {}
+                    return;
+                }
+                if (data.tick) {
+                    const quote = data.tick.quote;
+                    const digit = Number(String(quote).replace(/[^0-9]/g, '').slice(-1));
+                    if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+                        digits.push(digit);
+                        if (digits.length > 200) digits.shift();
+                        updateDashboard();
+                    }
+                }
+            } catch (_) {
+                setSignalUI('ERROR', 0, 'FAIL', 'Invalid market-data message received.', 'var(--accent-red)');
             }
         };
-
-        socket.onerror = () => {
-            setSignalUI('ERROR', 0, 'FAIL', 'WebSocket connection error.', 'var(--accent-red)');
+        socket.onerror = () => updateConnectionStatus('offline');
+        socket.onclose = () => {
+            updateConnectionStatus('offline');
+            if (running) scheduleReconnect();
         };
+    }
+
+    function scheduleReconnect() {
+        if (!running || reconnectTimer) return;
+        const delay = Math.min(15000, 1000 * Math.pow(2, reconnectAttempts++));
+        updateConnectionStatus('reconnecting');
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectSocket();
+        }, delay);
+    }
+
+    function updateConnectionStatus(state) {
+        const el = document.getElementById('connectionStatus');
+        if (!el) return;
+        el.className = 'status status-' + state;
+        el.textContent = state === 'live' ? '● LIVE DERIV DATA' :
+            state === 'connecting' ? '● CONNECTING' :
+            state === 'reconnecting' ? '● RECONNECTING' : '● OFFLINE';
     }
 
     function stopEngine() {
         running = false;
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         if (socket) {
             socket.close();
             socket = null;
         }
-        setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
+        updateConnectionStatus('offline');\n        setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
     }
 
     function updateDashboard() {
@@ -562,9 +600,9 @@
             // Entry Condition B: High-Order Mean Reversion (Odd streak >= 5 ticks)
             else if (oddStreak >= 5) {
                 decision = 'BUY EVEN';
-                confidence = 85;
+                confidence = 78;
                 filterStatus = 'PASS';
-                reason = `EVEN MEAN REVERSION: ${oddStreak} consecutive Odd ticks detected. Probability of parity continuation dropping below 3.12%.`;
+                reason = `EVEN MEAN REVERSION: ${oddStreak} consecutive Odd ticks detected. A parity streak alone is not treated as proof of reversal; it is only a secondary signal.`;
             } 
             else {
                 reason = `NO EVEN ENTRY: Z-Score (${zScore.toFixed(2)}) is below statistical significance threshold (1.75). Market parity is in noise zone.`;
@@ -630,7 +668,7 @@
         // ------------------------------------------
         else if (contract === 'UNDER') {
             const barrier = parseInt(document.getElementById('barrier').value);
-            const expectedProb = barrier / 10; // e.g. Under 5 -> digits 0,1,2,3,4 (prob = 0.5)
+            const expectedProb = barrier / 10; // P(digit < barrier) under a uniform 0-9 baseline
             const underCount = digits.filter(d => d < barrier).length;
 
             zScore = engine.calculateZScore(underCount, n, expectedProb);
@@ -666,7 +704,7 @@
                 decision = `BUY DIFFER (${coldDigit})`;
                 confidence = Math.min(96, Math.round(80 + (absenceTicks - 18) * 2));
                 filterStatus = 'PASS';
-                reason = `POISSON ABSENCE SETUP: Digit ${coldDigit} has been absent for ${absenceTicks} consecutive ticks. Single-tick reappearance probability remains < 10%.`;
+                reason = `POISSON ABSENCE SETUP: Digit ${coldDigit} has been absent for ${absenceTicks} consecutive ticks. The next digit is still treated as approximately 10% under the uniform-digit baseline; absence is only a watch condition.`;
             } else {
                 reason = `NO DIFFER ENTRY: Coldest digit (${coldDigit}) missing for only ${absenceTicks} ticks. Requires 18+ tick absence to eliminate risk.`;
             }
