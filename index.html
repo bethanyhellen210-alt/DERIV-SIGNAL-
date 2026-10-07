@@ -289,7 +289,7 @@
             </div>
         </div>
         <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <label style="display:flex;gap:8px;align-items:center"><input id="autoTrade" type="checkbox" onchange="toggleAutoTrade()"> AUTO TRADE INSIDE ELISY254</label>
+            <div><strong>TRADING ACCOUNT</strong><div id="accountModeLabel" class="signal-detail" style="margin-top:6px">Use the connected Demo/Real account above.</div></div>
             <label style="display:flex;gap:8px;align-items:center"><input id="realTradeConfirm" type="checkbox"> I CONFIRM REAL-MONEY TRADING</label>
         </div>
         <div id="tradeStatus" class="signal-detail" style="margin-top:10px">Auto Trade OFF. Connect a Deriv account first.</div>
@@ -299,21 +299,30 @@
           <div class="sniper-heading"><div><h2>SNIPER ENTRY</h2><p>OUR ANALYSIS ENGINE • LIVE DERIV DATA → SIGNAL → AUTO TRADE</p></div><div id="sniperStatus" class="status status-offline">● READY</div></div>
           <div class="sniper-controls">
             <div class="control-group">
-              <label for="accountMode">Account Mode</label>
-              <select id="accountMode" class="account-mode" onchange="setAccountMode(this.value)"><option value="demo">DEMO</option><option value="real">REAL</option></select>
+              <label for="market">MARKET</label>
+              <select id="market"><option value="">CONNECTING TO DERIV...</option></select>
             </div>
             <div class="control-group">
-              <label for="market">Select Market</label>
-              <select id="market" onchange="if(running) startEngine()"><option value="">CONNECTING TO DERIV...</option></select>
-            </div>
-            <div class="control-group">
-              <label for="contract">Select Contract Type</label>
+              <label for="contract">CONTRACT TYPE</label>
               <select id="contract" onchange="onContractChange()"><option value="EVEN">EVEN</option><option value="ODD">ODD</option><option value="OVER">OVER</option><option value="UNDER">UNDER</option><option value="MATCH">MATCH</option><option value="DIFFER">DIFFER</option></select>
             </div>
-            <div class="control-group" id="barrierGroup" style="display:none"><label for="barrier">Digit Barrier</label><select id="barrier" onchange="onBarrierChange()"><option value="0">Digit 0</option><option value="1">Digit 1</option><option value="2">Digit 2</option><option value="3">Digit 3</option><option value="4" selected>Digit 4</option><option value="5">Digit 5</option><option value="6">Digit 6</option><option value="7">Digit 7</option><option value="8">Digit 8</option></select></div>
-            <button class="btn-start sniper-start" onclick="startEngine()">START ANALYSIS</button>
+            <div class="control-group">
+              <label for="stake">STAKE</label>
+              <input id="stake" type="number" min="0.35" step="0.01" value="0.35" inputmode="decimal" style="width:100%;min-width:0;background:#1e293b;color:var(--text-main);padding:10px 16px;border:1px solid var(--card-border);border-radius:8px">
+            </div>
+            <div class="control-group">
+              <label for="martingale">MARTINGALE</label>
+              <select id="martingale"><option value="1">OFF / 1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="5">5×</option></select>
+            </div>
+            <div class="control-group" id="barrierGroup" style="display:none"><label for="barrier">DIGIT BARRIER</label><select id="barrier" onchange="onBarrierChange()"><option value="0">Digit 0</option><option value="1">Digit 1</option><option value="2">Digit 2</option><option value="3">Digit 3</option><option value="4" selected>Digit 4</option><option value="5">Digit 5</option><option value="6">Digit 6</option><option value="7">Digit 7</option><option value="8">Digit 8</option></select></div>
+            <label class="control-group" style="flex-direction:row;align-items:center;justify-content:center;gap:10px;padding:10px 12px;background:#101827;border:1px solid var(--card-border);border-radius:8px">
+              <input id="autoTrade" type="checkbox" onchange="toggleAutoTrade()">
+              <span style="font-size:.8rem;font-weight:800">AUTO TRADE</span>
+            </label>
+            <button id="startAnalysisBtn" class="btn-start sniper-start" onclick="startAnalysis()">START ANALYSIS</button>
+            <button id="stopAnalysisBtn" class="btn-stop sniper-start" onclick="stopAnalysis()" style="display:none">STOP</button>
           </div>
-          <div class="signal-detail" style="margin-top:12px">Sniper Entry runs the analysis engine. When auto-trade is enabled in the account panel, a confirmed setup can proceed to auto trade subject to the selected account and risk controls.</div>
+          <div id="sniperRunInfo" class="signal-detail" style="margin-top:12px">Select market, contract type, stake and martingale. Turn AUTO TRADE on if you want the engine to be allowed to prepare a trade. START ANALYSIS begins a fresh session and opens Transactions.</div>
         </div>
       </main>
     </div>
@@ -563,6 +572,17 @@
             },
             options
         });
+    }
+
+    function startAnalysis() {
+        const market = document.getElementById('market').value;
+        const stake = Number(document.getElementById('stake').value);
+        if (!market) { alert('Select a Deriv market first.'); return; }
+        if (!Number.isFinite(stake) || stake <= 0) { alert('Enter a valid stake.'); return; }
+        openTransactions('ANALYSIS STARTED', 'Sniper Entry is running. Waiting for a confirmed setup.');
+        document.getElementById('startAnalysisBtn').style.display='none';
+        document.getElementById('stopAnalysisBtn').style.display='block';
+        startEngine();
     }
 
     function startEngine() {
@@ -873,6 +893,564 @@
         el.textContent = state === 'live' ? '● LIVE DERIV DATA' :
             state === 'connecting' ? '● CONNECTING' :
             state === 'reconnecting' ? '● RECONNECTING' : '● OFFLINE';
+    }
+
+    function stopAnalysis() {
+        stopEngine();
+        document.getElementById('startAnalysisBtn').style.display='block';
+        document.getElementById('stopAnalysisBtn').style.display='none';
+        openTransactions('ANALYSIS STOPPED', 'Sniper Entry was stopped. No new trade will be prepared.');
+    }
+
+    function openTransactions(status, detail) {
+        const list = document.getElementById('transactionList');
+        if (list) {
+            list.innerHTML = '<div class="card signal-engine"><div class="signal-title">CURRENT SESSION</div><div class="big-signal" style="font-size:1.6rem">' + status + '</div><div class="signal-detail">' + detail + '</div><div class="metric-row"><span>Market</span><strong>' + (document.getElementById('market')?.value || '-') + '</strong></div><div class="metric-row"><span>Contract</span><strong>' + (document.getElementById('contract')?.value || '-') + '</strong></div><div class="metric-row"><span>Stake</span><strong>
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        if (socket) {
+            try { socket.onclose = null; socket.close(); } catch (_) {}
+            socket = null;
+        }
+        if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+        if (liveWatchdogTimer) { clearTimeout(liveWatchdogTimer); liveWatchdogTimer = null; }
+        if (mt5AnalysisTimer) { clearInterval(mt5AnalysisTimer); mt5AnalysisTimer = null; }
+        updateConnectionStatus('offline');
+        setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
+    }
+
+    let mt5AnalysisTimer = null;
+    let mt5AnalysisBusy = false;
+
+    async function updateMT5Signal() {
+        const forexEl = document.getElementById('forexSignal');
+        const forexReason = document.getElementById('forexReason');
+        const forexDir = document.getElementById('forexDirection');
+        const forexScore = document.getElementById('forexScore');
+        const symbolLabel = document.getElementById('mt5SymbolLabel');
+        if (!forexEl || mt5AnalysisBusy) return;
+
+        mt5AnalysisBusy = true;
+        forexEl.textContent = 'LOADING';
+        forexDir.textContent = '-';
+        forexScore.textContent = '-';
+        forexReason.textContent = 'Reading real MT5 M5, M15 and H1 candles...';
+
+        try {
+            const response = await fetch('/api/mt5/candles?symbol=EURUSD', { cache: 'no-store' });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.message || 'MT5 candle service is not configured.');
+
+            if (symbolLabel) symbolLabel.textContent = data.symbol;
+            forexEl.textContent = data.signal;
+            forexDir.textContent = data.signal;
+            forexScore.textContent = data.score;
+            forexEl.style.color = data.signal === 'BUY'
+                ? 'var(--accent-green)'
+                : data.signal === 'SELL'
+                    ? 'var(--accent-red)'
+                    : 'var(--text-muted)';
+            forexReason.textContent = data.reason;
+        } catch (err) {
+            forexEl.textContent = 'WAITING';
+            forexDir.textContent = '-';
+            forexScore.textContent = '-';
+            forexReason.textContent = err.message || 'MT5 candle data unavailable.';
+        } finally {
+            mt5AnalysisBusy = false;
+        }
+    }
+
+    function startMT5Analysis() {
+        updateMT5Signal();
+        if (mt5AnalysisTimer) clearInterval(mt5AnalysisTimer);
+        mt5AnalysisTimer = setInterval(updateMT5Signal, 15000);
+    }
+
+    function resetDigitSignalLock() {
+        digitSignalState.lockedSignal = null;
+        digitSignalState.lockedDigit = null;
+        digitSignalState.candidateSignal = null;
+        digitSignalState.candidateDigit = null;
+        digitSignalState.candidateConfirmations = 0;
+        digitSignalState.lastAnalysisTick = 0;
+        digitSignalState.nextAnalysisTick = 30;
+        digitSignalState.lockUntilTick = 0;
+    }
+
+    function onBarrierChange() {
+        resetDigitSignalLock();
+        if (digits.length >= 30) {
+            evaluateSignal();
+            updateDualSignalBoxes();
+        }
+    }
+
+    function getContractCandidate() {
+        const sample = digits.slice(-100);
+        if (sample.length < 30) return null;
+
+        const contract = document.getElementById('contract').value;
+        const barrier = parseInt(document.getElementById('barrier').value, 10);
+        const recent = sample.slice(-20);
+        const counts = Array(10).fill(0);
+        sample.forEach(d => counts[d]++);
+        const recentCounts = Array(10).fill(0);
+        recent.forEach(d => recentCounts[d]++);
+
+        const rate = predicate => sample.filter(predicate).length / sample.length;
+        const recentRate = predicate => recent.filter(predicate).length / recent.length;
+
+        if (contract === 'EVEN') {
+            const score = rate(d => d % 2 === 0) * 0.65 + recentRate(d => d % 2 === 0) * 0.35;
+            return score >= 0.58 ? { signal: 'EVEN', digit: null, score } : { signal: 'WAIT', digit: null, score };
+        }
+
+        if (contract === 'ODD') {
+            const score = rate(d => d % 2 !== 0) * 0.65 + recentRate(d => d % 2 !== 0) * 0.35;
+            return score >= 0.58 ? { signal: 'ODD', digit: null, score } : { signal: 'WAIT', digit: null, score };
+        }
+
+        if (contract === 'OVER' || contract === 'UNDER') {
+            const candidates = [];
+            for (let b = 0; b <= 8; b++) {
+                const isOver = contract === 'OVER';
+                const predicate = isOver ? (d => d > b) : (d => d < b);
+                const baseline = isOver ? (9 - b) / 10 : b / 10;
+                if (baseline < 0.50) continue;
+                const score = rate(predicate) * 0.65 + recentRate(predicate) * 0.35;
+                const edge = score - baseline;
+                if (score >= 0.62 && edge >= 0.08) candidates.push({b,score,edge,baseline});
+            }
+            candidates.sort((a,b)=>(b.edge-a.edge)||(b.score-a.score));
+            if(!candidates.length) return {signal:'WAIT',digit:null,score:0,riskBlocked:true,reason:contract+' risk filter rejected all barriers.'};
+            const selected=candidates.find(x=>x.b===barrier)||candidates[0];
+            return {signal:contract+' '+selected.b,digit:null,score:selected.score,edge:selected.edge,baseline:selected.baseline,autoBarrier:selected.b!==barrier};
+        }
+
+        if (contract === 'MATCH') {
+            let hotDigit = 0;
+            let bestScore = -Infinity;
+            for (let d = 0; d < 10; d++) {
+                const score = (counts[d] / sample.length) * 0.65 +
+                    (recentCounts[d] / recent.length) * 0.35;
+                if (score > bestScore) {
+                    bestScore = score;
+                    hotDigit = d;
+                }
+            }
+            return bestScore >= 0.135
+                ? { signal: 'MATCH ' + hotDigit, digit: hotDigit, score: bestScore }
+                : { signal: 'WAIT', digit: hotDigit, score: bestScore };
+        }
+
+        if (contract === 'DIFFER') {
+            let coldDigit = 0;
+            let maxAbsence = -1;
+            for (let d = 0; d < 10; d++) {
+                let absence = sample.length;
+                for (let i = sample.length - 1; i >= 0; i--) {
+                    if (sample[i] === d) {
+                        absence = sample.length - 1 - i;
+                        break;
+                    }
+                }
+                if (absence > maxAbsence) {
+                    maxAbsence = absence;
+                    coldDigit = d;
+                }
+            }
+            return maxAbsence >= 12
+                ? { signal: 'DIFFER ' + coldDigit, digit: coldDigit, score: maxAbsence }
+                : { signal: 'WAIT', digit: coldDigit, score: maxAbsence };
+        }
+
+        return { signal: 'WAIT', digit: null, score: 0 };
+    }
+
+    function updateDigitSignalLock() {
+        const n = digits.length;
+        if (n < 30 || n < digitSignalState.nextAnalysisTick) return;
+
+        digitSignalState.lastAnalysisTick = n;
+        digitSignalState.nextAnalysisTick = n + DIGIT_ANALYSIS_STEP;
+
+        const candidate = getContractCandidate();
+        if (!candidate) return;
+        if (
+            candidate.signal === digitSignalState.candidateSignal &&
+            candidate.digit === digitSignalState.candidateDigit
+        ) {
+            digitSignalState.candidateConfirmations++;
+        } else {
+            digitSignalState.candidateSignal = candidate.signal;
+            digitSignalState.candidateDigit = candidate.digit;
+            digitSignalState.candidateConfirmations = 1;
+        }
+
+        // Do not change a released DBot setup while its lock window is active.
+        if (digitSignalState.lockedSignal && n < digitSignalState.lockUntilTick) return;
+
+        if (digitSignalState.candidateConfirmations >= DIGIT_CONFIRMATIONS) {
+            digitSignalState.lockedSignal = candidate.signal;
+            digitSignalState.lockedDigit = candidate.digit;
+            digitSignalState.lockUntilTick = n + DIGIT_LOCK_TICKS;
+        }
+    }
+
+    function updateDualSignalBoxes() {
+        const n = digits.length;
+        const digitEl = document.getElementById('digitSignal');
+        const digitPred = document.getElementById('digitPrediction');
+        const predicted = document.getElementById('predictedDigit');
+        const digitSetup = document.getElementById('digitSetup');
+        if (!digitEl) return;
+
+        if (n < 30) {
+            digitEl.textContent = 'WAITING';
+            digitPred.textContent = 'Collecting 30+ live Deriv ticks before the first contract signal.';
+            predicted.textContent = '-';
+            digitSetup.textContent = 'WARMUP';
+            digitEl.style.color = 'var(--text-muted)';
+            return;
+        }
+
+        updateDigitSignalLock();
+        const state = digitSignalState;
+        const contract = document.getElementById('contract').value;
+        const barrier = document.getElementById('barrier').value;
+
+        if (!state.lockedSignal) {
+            digitEl.textContent = 'CONFIRMING';
+            digitPred.textContent =
+                'Confirming the selected ' + contract +
+                (contract === 'OVER' || contract === 'UNDER' ? ' ' + barrier : '') +
+                ' setup across multiple tick windows. No signal is released yet.';
+            predicted.textContent = state.candidateDigit ?? '-';
+            digitSetup.textContent = 'CONFIRMING';
+            digitEl.style.color = 'var(--accent-yellow)';
+            return;
+        }
+
+        const remaining = Math.max(0, state.lockUntilTick - n);
+        predicted.textContent = state.lockedDigit ?? '-';
+        digitEl.textContent = state.lockedSignal;
+        digitSetup.textContent = state.lockedSignal === 'WAIT' ? 'WAIT' : 'LOCKED';
+        digitPred.textContent = state.lockedSignal === 'WAIT'
+            ? 'No statistically strong setup. Continue collecting ticks.'
+            : 'ONE CONTRACT SETUP · LOCKED FOR ' + remaining + ' MORE TICKS';
+        digitEl.style.color = state.lockedSignal === 'WAIT'
+            ? 'var(--text-muted)' : 'var(--accent-green)';
+    }
+
+    function updateDashboard() {
+        const sampleSize = digits.length;
+        document.getElementById('sampleSize').innerText = sampleSize + ' / 30 ticks min';
+        document.getElementById('lastDigitVal').innerText = sampleSize ? digits[digits.length - 1] : '-';
+        document.getElementById('digitsFeed').innerText = digits.slice(-18).reverse().join('  ') || '-';
+
+        const evenCnt = digits.filter(d => d % 2 === 0).length;
+        if (parityChart) {
+            parityChart.data.datasets[0].data = [evenCnt, sampleSize - evenCnt];
+            parityChart.update();
+        }
+
+        const barrier = parseInt(document.getElementById('barrier').value, 10);
+        const overCnt = digits.filter(d => d > barrier).length;
+        if (barrierChart) {
+            barrierChart.data.datasets[0].data = [overCnt, sampleSize - overCnt];
+            barrierChart.update();
+        }
+
+        evaluateSignal();        updateDualSignalBoxes();
+    }
+    // ==========================================
+    // STRICT SINGLE-CONTRACT EVALUATION LOGIC
+    // ==========================================
+    function evaluateSignal() {
+        const n = digits.length;
+
+        // FILTER 1: Minimum Sample Size Protocol (Eliminate random noise)
+        if (n < engine.minSample) {
+            setSignalUI(
+                'WAIT', 
+                0, 
+                'WAIT', 
+                `Insufficient sample volume (${n}/${engine.minSample} ticks). Waiting for baseline sample.`, 
+                'var(--text-muted)'
+            );
+            return;
+        }
+
+        const contract = document.getElementById('contract').value;
+        const lastDigit = digits[digits.length - 1];
+        const ema = engine.calculateEMA(digits, 15);
+        const absenceInfo = engine.getAbsenceTracker(digits);
+
+        document.getElementById('digitEma').innerText = ema.toFixed(2);
+        document.getElementById('coldDigitVal').innerText = `Digit ${absenceInfo.coldDigit} (${absenceInfo.absenceTicks}t ago)`;
+
+        let decision = 'WAIT';
+        let confidence = 0;
+        let filterStatus = 'FAIL';
+        let reason = '';
+        let zScore = 0;
+
+        // ------------------------------------------
+        // CONTRACT 1: EVEN ONLY
+        // ------------------------------------------
+        if (contract === 'EVEN') {
+            const evenCount = digits.filter(d => d % 2 === 0).length;
+            zScore = engine.calculateZScore(evenCount, n, 0.5);
+            const shortEvenRatio = digits.slice(-10).filter(d => d % 2 === 0).length / 10;
+            const oddStreak = engine.getStreak(digits, 'ODD');
+
+            document.getElementById('zScoreVal').innerText = zScore.toFixed(2);
+            document.getElementById('streakVal').innerText = `Odd Streak: ${oddStreak}`;
+
+            // Entry Condition A: Trend Momentum (Z >= 1.75 AND short-term ratio >= 70%)
+            if (zScore >= 1.75 && shortEvenRatio >= 0.70) {
+                decision = 'BUY EVEN';
+                confidence = Math.min(94, Math.round(50 + (zScore * 20)));
+                filterStatus = 'PASS';
+                reason = `STRONG EVEN BIAS: Z-Score (${zScore.toFixed(2)} >= 1.75) confirms statistically significant Even dominance with ${shortEvenRatio * 100}% short-term Even velocity.`;
+            }
+            // Entry Condition B: High-Order Mean Reversion (Odd streak >= 5 ticks)
+            else if (oddStreak >= 5) {
+                decision = 'BUY EVEN';
+                confidence = 78;
+                filterStatus = 'PASS';
+                reason = `EVEN MEAN REVERSION: ${oddStreak} consecutive Odd ticks detected. A parity streak alone is not treated as proof of reversal; it is only a secondary signal.`;
+            } 
+            else {
+                reason = `NO EVEN ENTRY: Z-Score (${zScore.toFixed(2)}) is below statistical significance threshold (1.75). Market parity is in noise zone.`;
+            }
+        }
+
+        // ------------------------------------------
+        // CONTRACT 2: ODD ONLY
+        // ------------------------------------------
+        else if (contract === 'ODD') {
+            const oddCount = digits.filter(d => d % 2 !== 0).length;
+            zScore = engine.calculateZScore(oddCount, n, 0.5);
+            const shortOddRatio = digits.slice(-10).filter(d => d % 2 !== 0).length / 10;
+            const evenStreak = engine.getStreak(digits, 'EVEN');
+
+            document.getElementById('zScoreVal').innerText = zScore.toFixed(2);
+            document.getElementById('streakVal').innerText = `Even Streak: ${evenStreak}`;
+
+            if (zScore >= 1.75 && shortOddRatio >= 0.70) {
+                decision = 'BUY ODD';
+                confidence = Math.min(94, Math.round(50 + (zScore * 20)));
+                filterStatus = 'PASS';
+                reason = `STRONG ODD BIAS: Z-Score (${zScore.toFixed(2)} >= 1.75) confirms statistically significant Odd dominance with ${shortOddRatio * 100}% short-term Odd velocity.`;
+            }
+            else if (evenStreak >= 5) {
+                decision = 'BUY ODD';
+                confidence = 85;
+                filterStatus = 'PASS';
+                reason = `ODD MEAN REVERSION: ${evenStreak} consecutive Even ticks detected. A parity streak alone is not treated as proof of continuation or reversal; it is only a secondary signal.`;
+            } 
+            else {
+                reason = `NO ODD ENTRY: Z-Score (${zScore.toFixed(2)}) is below statistical threshold (1.75). Distribution shows no true Odd edge.`;
+            }
+        }
+
+        // ------------------------------------------
+        // CONTRACT 3: OVER ONLY
+        // ------------------------------------------
+        else if (contract === 'OVER') {
+            const barrier = parseInt(document.getElementById('barrier').value);
+            const expectedProb = (9 - barrier) / 10; // e.g. Over 4 -> digits 5,6,7,8,9 (prob = 0.5)
+            const overCount = digits.filter(d => d > barrier).length;
+            
+            zScore = engine.calculateZScore(overCount, n, expectedProb);
+            const shortOverRatio = digits.slice(-10).filter(d => d > barrier).length / 10;
+
+            document.getElementById('zScoreVal').innerText = zScore.toFixed(2);
+            document.getElementById('streakVal').innerText = `EMA: ${ema.toFixed(2)}`;
+
+            // Filter: Z-score >= 1.80 AND EMA above baseline + 0.6
+            if (zScore >= 1.80 && ema >= (4.5 + 0.6) && shortOverRatio >= 0.60) {
+                decision = `BUY OVER ${barrier}`;
+                confidence = Math.min(95, Math.round(55 + (zScore * 18)));
+                filterStatus = 'PASS';
+                reason = `CONFIRMED OVER ${barrier}: Z-Score (${zScore.toFixed(2)}) & Digit EMA (${ema.toFixed(2)}) confirm strong high-digit elevation.`;
+            } else {
+                reason = `NO OVER ENTRY: Z-Score (${zScore.toFixed(2)}) or Digit EMA (${ema.toFixed(2)}) fails high-digit momentum confirmation filter.`;
+            }
+        }
+
+        // ------------------------------------------
+        // CONTRACT 4: UNDER ONLY
+        // ------------------------------------------
+        else if (contract === 'UNDER') {
+            const barrier = parseInt(document.getElementById('barrier').value);
+            const expectedProb = barrier / 10; // P(digit < barrier) under a uniform 0-9 baseline
+            const underCount = digits.filter(d => d < barrier).length;
+
+            zScore = engine.calculateZScore(underCount, n, expectedProb);
+            const shortUnderRatio = digits.slice(-10).filter(d => d < barrier).length / 10;
+
+            document.getElementById('zScoreVal').innerText = zScore.toFixed(2);
+            document.getElementById('streakVal').innerText = `EMA: ${ema.toFixed(2)}`;
+
+            if (zScore >= 1.80 && ema <= (4.5 - 0.6) && shortUnderRatio >= 0.60) {
+                decision = `BUY UNDER ${barrier}`;
+                confidence = Math.min(95, Math.round(55 + (zScore * 18)));
+                filterStatus = 'PASS';
+                reason = `CONFIRMED UNDER ${barrier}: Z-Score (${zScore.toFixed(2)}) & Digit EMA (${ema.toFixed(2)}) confirm low-digit depression.`;
+            } else {
+                reason = `NO UNDER ENTRY: Z-Score (${zScore.toFixed(2)}) or Digit EMA (${ema.toFixed(2)}) fails low-digit momentum filter.`;
+            }
+        }
+
+        // ------------------------------------------
+        // CONTRACT 5: DIFFER ONLY
+        // ------------------------------------------
+        else if (contract === 'DIFFER') {
+            const coldDigit = absenceInfo.coldDigit;
+            const absenceTicks = absenceInfo.absenceTicks;
+            
+            // Expected absence Z-score calculation
+            zScore = (absenceTicks - 10) / Math.sqrt(10 * 0.9);
+            document.getElementById('zScoreVal').innerText = zScore.toFixed(2);
+            document.getElementById('streakVal').innerText = `Cold Digit ${coldDigit} (${absenceTicks}t)`;
+
+            // Strict Filter: Digit must be absent for 18+ ticks (Poisson extreme tail)
+            if (absenceTicks >= 18) {
+                decision = `BUY DIFFER (${coldDigit})`;
+                confidence = Math.min(96, Math.round(80 + (absenceTicks - 18) * 2));
+                filterStatus = 'PASS';
+                reason = `POISSON ABSENCE SETUP: Digit ${coldDigit} has been absent for ${absenceTicks} consecutive ticks. The next digit is still treated as approximately 10% under the uniform-digit baseline; absence is only a watch condition.`;
+            } else {
+                reason = `NO DIFFER ENTRY: Coldest digit (${coldDigit}) missing for only ${absenceTicks} ticks. Requires 18+ tick absence to eliminate risk.`;
+            }
+        }
+
+        // ------------------------------------------
+        // CONTRACT 6: MATCH ONLY
+        // ------------------------------------------
+        else if (contract === 'MATCH') {
+            // Find most frequent digit
+            const freq = Array(10).fill(0);
+            digits.forEach(d => freq[d]++);
+            let hotDigit = 0;
+            for (let d = 0; d < 10; d++) {
+                if (freq[d] > freq[hotDigit]) hotDigit = d;
+            }
+
+            zScore = engine.calculateZScore(freq[hotDigit], n, 0.1);
+            const recentMatch = (digits[digits.length - 1] === hotDigit || digits[digits.length - 2] === hotDigit);
+
+            document.getElementById('zScoreVal').innerText = zScore.toFixed(2);
+            document.getElementById('streakVal').innerText = `Hot Digit: ${hotDigit} (${freq[hotDigit]}x)`;
+
+            // Strict Filter: Z-score >= 2.2 AND hot digit appeared in last 2 ticks
+            if (zScore >= 2.20 && recentMatch) {
+                decision = `BUY MATCH (${hotDigit})`;
+                confidence = Math.min(88, Math.round(65 + zScore * 8));
+                filterStatus = 'PASS';
+                reason = `STATISTICAL CLUSTERING: Hot Digit ${hotDigit} showing massive frequency anomaly (Z-Score ${zScore.toFixed(2)}) with recent tick repetition.`;
+            } else {
+                reason = `NO MATCH ENTRY: Highest digit frequency (Digit ${hotDigit}) has Z-Score ${zScore.toFixed(2)} (< 2.20 required threshold).`;
+            }
+        }
+
+        // Display results to UI
+        const outputColor = filterStatus === 'PASS' ? 'var(--accent-green)' : 'var(--text-muted)';
+        setSignalUI(decision, confidence, filterStatus, reason, outputColor);
+    }
+
+    function setSignalUI(signal, confidence, filterStatus, reason, color) {
+        // Contract Signal Box was intentionally removed. Keep evaluation safe.
+        const sigElem = document.getElementById('signalOutput');
+        const confidenceElem = document.getElementById('confidenceVal');
+        const reasonElem = document.getElementById('signalReason');
+        const badge = document.getElementById('filterBadge');
+
+        if (!sigElem || !confidenceElem || !reasonElem || !badge) return;
+
+        sigElem.innerText = signal;
+        sigElem.style.color = color;
+        confidenceElem.innerText = confidence + '%';
+        reasonElem.innerText = reason;
+
+        if (filterStatus === 'PASS') {
+            badge.className = 'badge badge-pass';
+            badge.innerText = 'SETUP CONFIRMED';
+        } else if (filterStatus === 'FAIL') {
+            badge.className = 'badge badge-fail';
+            badge.innerText = 'FILTER REJECTED';
+        } else {
+            badge.className = 'badge badge-wait';
+            badge.innerText = 'DATA WARMUP';
+        }
+    }
+
+
+    // ==========================================
+    // RISK CONTROL
+    // ==========================================
+    const riskState = {
+        bankroll: 0, riskPct: 0.01, maxLossPct: 0.05, maxTrades: 10,
+        maxConsecutiveLosses: 3, trades: 0, pnl: 0, consecutiveLosses: 0
+    };
+    function riskStake(){ return riskState.bankroll>0 ? Math.min(riskState.bankroll*riskState.riskPct,1.00) : 0; }
+    function riskGate(candidate){
+        if(!candidate || candidate.signal==='WAIT') return {allowed:false,reason:candidate?.reason||'No qualifying setup.'};
+        if(!riskState.bankroll) return {allowed:false,reason:'Connect a Deriv account before trading.'};
+        if(riskState.trades>=riskState.maxTrades) return {allowed:false,reason:'Maximum 10 trades reached.'};
+        if(riskState.pnl<=-(riskState.bankroll*riskState.maxLossPct)) return {allowed:false,reason:'Maximum 5% session loss reached.'};
+        if(riskState.consecutiveLosses>=riskState.maxConsecutiveLosses) return {allowed:false,reason:'Maximum 3 consecutive losses reached.'};
+        return {allowed:true,reason:'Risk limits clear.'};
+    }
+    function updateRiskUI(message){
+        const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+        set('riskBankroll','$'+Number(riskState.bankroll||0).toFixed(2));
+        set('riskMaxLoss','$'+(Number(riskState.bankroll||0)*riskState.maxLossPct).toFixed(2));
+        set('riskPnL',(riskState.pnl<0?'-$':'$')+Math.abs(riskState.pnl).toFixed(2));
+        set('riskTrades',riskState.trades+' / '+riskState.maxTrades);
+        set('riskLosses',riskState.consecutiveLosses+' / '+riskState.maxConsecutiveLosses);
+        set('riskStake','$'+riskStake().toFixed(2));
+        const g=document.getElementById('riskGate');if(g){g.textContent=riskState.bankroll?'READY':'WAIT';g.style.color=riskState.bankroll?'var(--accent-green)':'var(--accent-yellow)';}
+        const r=document.getElementById('riskReason');if(r&&message)r.textContent=message;
+    }
+    function applyRiskToSignal(candidate){
+        const gate=riskGate(candidate);
+        const e=document.getElementById('riskGate');if(e){e.textContent=gate.allowed?'READY':'BLOCKED';e.style.color=gate.allowed?'var(--accent-green)':'var(--accent-red)';}
+        const r=document.getElementById('riskReason');if(r)r.textContent=gate.reason;
+        return gate.allowed;
+    }
+
+    // ==========================================
+    // DERIV OAUTH ACCOUNT + BALANCE + AUTO TRADE
+    // ==========================================
+    let derivAuthSocket=null;
+    let derivAccounts=[];
+    let selectedDerivAccount=null;
+    let autoTradeEnabled=false;
+    let autoTradeBusy=false;
+    let lastAutoTradeKey=null;
+    let tradeReqId=5000;
+    const autoTradeState={maxTrades:10,trades:0,maxConsecutiveLosses:3,consecutiveLosses:0,maxLossPct:0.05,pnl:0};
+
+    function derivLogin(){ window.location.href='/api/auth/login'; }
+    function derivSignup(){ window.location.href='/api/auth/login?signup=1'; }
+
+    async function derivLogout(){
+        try{ await fetch('/api/auth/logout',{method:'POST'}); }catch(_){}
+        if(derivAuthSocket){try{derivAuthSocket.close()}catch(_){} derivAuthSocket=null;}
+        selectedDerivAccount=null; derivAccounts=[];
+        document.getElementById('authStatus').textContent='Not connected';
+        document.getElementById('liveBalance').textContent='$0.00';
+        document.getElementById('accountType').textContent='-';
+        document.getElementById('tradeStatus').textContent='Logged out from Deriv.';
+        document.getElementById('autoTrade').checked=false;
+        autoTradeEnabled=false;
+    }
+ + Number(document.getElementById('stake')?.value || 0).toFixed(2) + '</strong></div><div class="metric-row"><span>Martingale</span><strong>' + (document.getElementById('martingale')?.value || '1') + '×</strong></div><div class="metric-row"><span>Auto Trade</span><strong>' + (document.getElementById('autoTrade')?.checked ? 'ON' : 'OFF') + '</strong></div></div>';
+        }
+        location.hash='transactions';
     }
 
     function stopEngine() {
