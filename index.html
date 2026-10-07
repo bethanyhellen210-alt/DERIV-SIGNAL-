@@ -1017,15 +1017,6 @@
 
         const candidate = getContractCandidate();
         if (!candidate) return;
-        if (!applyRiskToSignal(candidate)) {
-            digitSignalState.lockedSignal = null;
-            digitSignalState.lockedDigit = null;
-            digitSignalState.candidateSignal = 'WAIT';
-            digitSignalState.candidateDigit = candidate.digit ?? null;
-            digitSignalState.candidateConfirmations = 0;
-            return;
-        }
-
         if (
             candidate.signal === digitSignalState.candidateSignal &&
             candidate.digit === digitSignalState.candidateDigit
@@ -1398,69 +1389,3 @@
         document.getElementById('autoTrade').checked=false;
         autoTradeEnabled=false;
     }
-
-    async function loadDerivAccountConnection(){
-        try{
-            const r=await fetch('/api/deriv/accounts',{cache:'no-store'});
-            const data=await r.json();
-            if(!r.ok) throw new Error(data.error||'Not connected');
-            derivAccounts=data.accounts||[];
-            const select=document.getElementById('derivAccount');
-            select.innerHTML='';
-            derivAccounts.forEach(a=>{
-                const o=document.createElement('option');
-                o.value=a.account_id;
-                o.textContent=(a.account_type||'ACCOUNT').toUpperCase()+' • '+a.account_id+' • '+a.currency;
-                select.appendChild(o);
-            });
-            document.getElementById('authStatus').textContent='CONNECTED TO DERIV • '+derivAccounts.length+' ACCOUNT(S)';
-            if(derivAccounts.length) selectDerivAccount();
-        }catch(e){
-            document.getElementById('authStatus').textContent='Not connected • '+e.message;
-        }
-    }
-
-    async function selectDerivAccount(){
-        const id=document.getElementById('derivAccount').value;
-        selectedDerivAccount=derivAccounts.find(a=>a.account_id===id)||null;
-        if(!selectedDerivAccount) return;
-        riskState.bankroll=Number(selectedDerivAccount.balance||0);
-        updateRiskUI('Live Deriv balance loaded.');
-        document.getElementById('liveBalance').textContent=new Intl.NumberFormat('en-US',{style:'currency',currency:selectedDerivAccount.currency||'USD'}).format(selectedDerivAccount.balance||0);
-        document.getElementById('accountType').textContent=(selectedDerivAccount.account_type||'unknown').toUpperCase()+' • '+selectedDerivAccount.account_id;
-        await connectDerivTradingSocket();
-    }
-
-    async function connectDerivTradingSocket(){
-        if(!selectedDerivAccount) return;
-        try{
-            if(derivAuthSocket){try{derivAuthSocket.close()}catch(_){}}
-            const r=await fetch('/api/deriv/otp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:selectedDerivAccount.account_id})});
-            const data=await r.json();
-            if(!r.ok || !data.url) throw new Error(data.error||'Unable to authenticate trading socket');
-            derivAuthSocket=new WebSocket(data.url);
-            derivAuthSocket.onopen=()=>{
-                document.getElementById('tradeStatus').textContent='DERIV ACCOUNT SOCKET CONNECTED • '+selectedDerivAccount.account_type.toUpperCase();
-                derivAuthSocket.send(JSON.stringify({balance:1,subscribe:1,req_id:++tradeReqId}));
-                derivAuthSocket.send(JSON.stringify({portfolio:1,req_id:++tradeReqId}));
-            };
-            derivAuthSocket.onmessage=event=>{
-                let d;try{d=JSON.parse(event.data)}catch(_){return}
-                if(d.msg_type==='balance' && d.balance){
-                    const b=Number(d.balance.balance||0);
-                    riskState.bankroll=b;
-                    document.getElementById('liveBalance').textContent=new Intl.NumberFormat('en-US',{style:'currency',currency:d.balance.currency||selectedDerivAccount.currency||'USD'}).format(b);
-                    updateRiskUI('Live Deriv balance updating.');
-                }
-                if(d.msg_type==='buy'){
-                    autoTradeBusy=false;
-                    document.getElementById('tradeStatus').textContent='AUTO TRADE BUY ACCEPTED • CONTRACT '+(d.buy?.contract_id||'-');
-                    if(d.buy?.contract_id) derivAuthSocket.send(JSON.stringify({proposal_open_contract:1,contract_id:d.buy.contract_id,subscribe:1,req_id:++tradeReqId}));
-                }
-                if(d.msg_type==='proposal_open_contract' && d.proposal_open_contract?.is_sold){
-                    const p=Number(d.proposal_open_contract.profit||0);
-                    autoTradeState.pnl+=p;
-                    if(p<0) autoTradeState.consecutiveLosses++; else autoTradeState.consecutiveLosses=0;
-                    updateRiskUI('Contract closed • '+(p>=0?'+':'')+p.toFixed(2)+' '+(d.proposal_open_contract.currency||'USD'));
-                    autoTradeBusy=false;
-                }
