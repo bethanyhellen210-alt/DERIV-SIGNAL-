@@ -457,10 +457,9 @@
         currentMarket = document.getElementById('market').value || null;
         reconnectAttempts = 0;
         updateConnectionStatus('connecting');
-        updateDashboard();
         connectSocket();
+        updateDashboard();
     }
-
     function connectSocket() {
         if (!running) return;
 
@@ -789,24 +788,26 @@
 
     function updateDashboard() {
         const sampleSize = digits.length;
-        document.getElementById('sampleSize').innerText = `${sampleSize} / 30 ticks min`;
-        document.getElementById('lastDigitVal').innerText = digits[digits.length - 1];
-        document.getElementById('digitsFeed').innerText = digits.slice(-18).reverse().join('  ');
+        document.getElementById('sampleSize').innerText = sampleSize + ' / 30 ticks min';
+        document.getElementById('lastDigitVal').innerText = sampleSize ? digits[digits.length - 1] : '-';
+        document.getElementById('digitsFeed').innerText = digits.slice(-18).reverse().join('  ') || '-';
 
-        // Update Charts
         const evenCnt = digits.filter(d => d % 2 === 0).length;
-        parityChart.data.datasets[0].data = [evenCnt, sampleSize - evenCnt];
-        parityChart.update();
+        if (parityChart) {
+            parityChart.data.datasets[0].data = [evenCnt, sampleSize - evenCnt];
+            parityChart.update();
+        }
 
-        const barrier = parseInt(document.getElementById('barrier').value);
+        const barrier = parseInt(document.getElementById('barrier').value, 10);
         const overCnt = digits.filter(d => d > barrier).length;
-        barrierChart.data.datasets[0].data = [overCnt, sampleSize - overCnt];
-        barrierChart.update();
+        if (barrierChart) {
+            barrierChart.data.datasets[0].data = [overCnt, sampleSize - overCnt];
+            barrierChart.update();
+        }
 
         evaluateSignal();
         updateDualSignalBoxes();
     }
-
     // ==========================================
     // STRICT SINGLE-CONTRACT EVALUATION LOGIC
     // ==========================================
@@ -1006,14 +1007,19 @@
     }
 
     function setSignalUI(signal, confidence, filterStatus, reason, color) {
+        // Contract Signal Box was intentionally removed. Keep evaluation safe.
         const sigElem = document.getElementById('signalOutput');
+        const confidenceElem = document.getElementById('confidenceVal');
+        const reasonElem = document.getElementById('signalReason');
+        const badge = document.getElementById('filterBadge');
+
+        if (!sigElem || !confidenceElem || !reasonElem || !badge) return;
+
         sigElem.innerText = signal;
         sigElem.style.color = color;
+        confidenceElem.innerText = confidence + '%';
+        reasonElem.innerText = reason;
 
-        document.getElementById('confidenceVal').innerText = confidence + '%';
-        document.getElementById('signalReason').innerText = reason;
-
-        const badge = document.getElementById('filterBadge');
         if (filterStatus === 'PASS') {
             badge.className = 'badge badge-pass';
             badge.innerText = 'SETUP CONFIRMED';
