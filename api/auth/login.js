@@ -14,7 +14,7 @@ module.exports = async (req,res) => {
     const origin = process.env.DERIV_REDIRECT_URI
       ? new URL(process.env.DERIV_REDIRECT_URI).origin
       : (req.headers['x-forwarded-proto'] || 'https')+'://'+req.headers.host;
-    const redirectUri = process.env.DERIV_REDIRECT_URI || origin+'/callback';
+    const redirectUri = process.env.DERIV_REDIRECT_URI || origin+'/api/auth/callback';
     const verifier = base64url(crypto.randomBytes(48));
     const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
     const state = base64url(crypto.randomBytes(32));
