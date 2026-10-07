@@ -407,6 +407,23 @@
     let reconnectAttempts = 0;
     let liveWatchdogTimer = null;
 
+    // Digit signal lock: prevents the displayed DBot-style signal from
+    // changing on every incoming tick. A signal is confirmed over multiple
+    // analysis windows and then held for a fixed number of new ticks.
+    const digitSignalState = {
+        lockedSignal: null,
+        lockedDigit: null,
+        candidateSignal: null,
+        candidateDigit: null,
+        candidateConfirmations: 0,
+        lastAnalysisTick: 0,
+        nextAnalysisTick: 30,
+        lockUntilTick: 0
+    };
+    const DIGIT_ANALYSIS_STEP = 10;
+    const DIGIT_LOCK_TICKS = 20;
+    const DIGIT_CONFIRMATIONS = 2;
+
     const engine = new StrictQuantEngine();
     let parityChart, barrierChart;
 
@@ -462,6 +479,7 @@
     function startEngine() {
         stopEngine();
         digits = [];
+        resetDigitSignalLock();
         running = true;
         const selectedMarket = document.getElementById('market').value;
         currentMarket = selectedMarket || '1HZ100V';
@@ -831,6 +849,75 @@
         mt5AnalysisTimer = setInterval(updateMT5Signal, 15000);
     }
 
+    function resetDigitSignalLock() {
+        digitSignalState.lockedSignal = null;
+        digitSignalState.lockedDigit = null;
+        digitSignalState.candidateSignal = null;
+        digitSignalState.candidateDigit = null;
+        digitSignalState.candidateConfirmations = 0;
+        digitSignalState.lastAnalysisTick = 0;
+        digitSignalState.nextAnalysisTick = 30;
+        digitSignalState.lockUntilTick = 0;
+    }
+
+    function getDigitCandidate() {
+        const sample = digits.slice(-100);
+        if (sample.length < 30) return null;
+
+        const counts = Array(10).fill(0);
+        sample.forEach(d => counts[d]++);
+        const recent = sample.slice(-20);
+        const recentCounts = Array(10).fill(0);
+        recent.forEach(d => recentCounts[d]++);
+
+        // Combine the long sample with the recent window instead of allowing
+        // one or two ticks to flip the prediction.
+        let bestDigit = 0;
+        let bestScore = -Infinity;
+        for (let d = 0; d < 10; d++) {
+            const longRate = counts[d] / sample.length;
+            const recentRate = recentCounts[d] / recent.length;
+            const score = (longRate * 0.65) + (recentRate * 0.35);
+            if (score > bestScore) {
+                bestScore = score;
+                bestDigit = d;
+            }
+        }
+
+        const confidence = bestScore;
+        // Do not manufacture a trade when the digit distribution is too flat.
+        if (confidence < 0.135) return { signal: 'WAIT', digit: bestDigit, confidence };
+        return { signal: 'DIGIT ' + bestDigit, digit: bestDigit, confidence };
+    }
+
+    function updateDigitSignalLock() {
+        const n = digits.length;
+        if (n < 30 || n < digitSignalState.nextAnalysisTick) return;
+        digitSignalState.lastAnalysisTick = n;
+        digitSignalState.nextAnalysisTick = n + DIGIT_ANALYSIS_STEP;
+
+        const candidate = getDigitCandidate();
+        if (!candidate) return;
+
+        if (candidate.signal === digitSignalState.candidateSignal && candidate.digit === digitSignalState.candidateDigit) {
+            digitSignalState.candidateConfirmations++;
+        } else {
+            digitSignalState.candidateSignal = candidate.signal;
+            digitSignalState.candidateDigit = candidate.digit;
+            digitSignalState.candidateConfirmations = 1;
+        }
+
+        // Keep an existing signal stable. It can only be replaced after its
+        // lock period and after the new direction is confirmed twice.
+        if (digitSignalState.lockedSignal && n < digitSignalState.lockUntilTick) return;
+
+        if (digitSignalState.candidateConfirmations >= DIGIT_CONFIRMATIONS) {
+            digitSignalState.lockedSignal = candidate.signal;
+            digitSignalState.lockedDigit = candidate.digit;
+            digitSignalState.lockUntilTick = n + DIGIT_LOCK_TICKS;
+        }
+    }
+
     function updateDualSignalBoxes() {
         const n = digits.length;
         const digitEl = document.getElementById('digitSignal');
@@ -839,31 +926,35 @@
         const digitSetup = document.getElementById('digitSetup');
         if (!digitEl) return;
 
-        // Digit engine is deliberately isolated from MT5.
+        // Digit engine is deliberately isolated from MT5 and only refreshes
+        // its trading signal in confirmed analysis windows, not every tick.
         if (n < 30) {
             digitEl.textContent = 'WAITING';
-            digitPred.textContent = 'Waiting for 30+ live Deriv ticks...';
+            digitPred.textContent = 'Collecting 30+ live Deriv ticks before the first signal.';
             predicted.textContent = '-';
             digitSetup.textContent = 'WARMUP';
-        } else {
-            const counts = Array(10).fill(0);
-            digits.forEach(d => counts[d]++);
-            let hot = 0;
-            for (let d = 1; d < 10; d++) if (counts[d] > counts[hot]) hot = d;
-            const recent = digits.slice(-10);
-            const recentCounts = Array(10).fill(0);
-            recent.forEach(d => recentCounts[d]++);
-            let candidate = hot;
-            for (let d = 0; d < 10; d++) {
-                if (recentCounts[d] > recentCounts[candidate]) candidate = d;
-            }
-            const recentFreq = recentCounts[candidate] / recent.length;
-            predicted.textContent = candidate;
-            digitEl.textContent = 'DIGIT ' + candidate;
-            digitSetup.textContent = recentFreq >= 0.3 ? 'STRONG' : 'WATCH';
-            digitPred.textContent = 'Live Deriv tick digit analysis.';
-            digitEl.style.color = recentFreq >= 0.3 ? 'var(--accent-green)' : 'var(--accent-blue)';
+            return;
         }
+
+        updateDigitSignalLock();
+        const state = digitSignalState;
+
+        if (!state.lockedSignal) {
+            digitEl.textContent = 'CONFIRMING';
+            digitPred.textContent = 'Analyzing multiple tick windows. No DBot signal is released yet.';
+            predicted.textContent = state.candidateDigit ?? '-';
+            digitSetup.textContent = 'CONFIRMING';
+            digitEl.style.color = 'var(--accent-yellow)';
+            return;
+        }
+
+        predicted.textContent = state.lockedDigit;
+        digitEl.textContent = state.lockedSignal;
+        digitSetup.textContent = 'LOCKED';
+        digitPred.textContent = 'ONE CONFIRMED SIGNAL · LOCKED FOR ' +
+            Math.max(0, state.lockUntilTick - n) + ' MORE TICKS';
+        digitEl.style.color = state.lockedSignal === 'WAIT'
+            ? 'var(--text-muted)' : 'var(--accent-green)';
     }
 
     function updateDashboard() {
