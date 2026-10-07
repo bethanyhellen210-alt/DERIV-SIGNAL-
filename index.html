@@ -502,7 +502,18 @@
                 req_id: 1
             }));
 
-            requestMarketData();
+            socket.send(JSON.stringify({
+                ticks: currentMarket || '1HZ100V',
+                subscribe: 1,
+                req_id: 2
+            }));
+            socket.send(JSON.stringify({
+                ticks_history: currentMarket || '1HZ100V',
+                count: 100,
+                end: 'latest',
+                style: 'ticks',
+                req_id: 3
+            }));
 
             if (liveWatchdogTimer) clearTimeout(liveWatchdogTimer);
             liveWatchdogTimer = setTimeout(() => {
@@ -549,7 +560,7 @@
                     }
 
                     if (currentMarket && socket && socket.readyState === WebSocket.OPEN) {
-                        requestMarketData();
+                        if (digits.length === 0) requestMarketData();
                     } else {
                         updateConnectionStatus('reconnecting');
                         scheduleReconnect();
