@@ -409,7 +409,7 @@
     let parityChart, barrierChart;
 
     window.onload = () => {
-        initCharts();
+        try { initCharts(); } catch (err) { console.warn('[ELISY254] Chart init skipped:', err); }
         onContractChange();
         startEngine();
     };
@@ -488,7 +488,7 @@
         updateConnectionStatus('connecting');
 
         try {
-            socket = new WebSocket('wss://ws.binaryws.com/websockets/v3');
+            socket = new WebSocket('wss://api.derivws.com/trading/v1/options/ws/public');
         } catch (err) {
             updateConnectionStatus('reconnecting');
             scheduleReconnect();
@@ -497,6 +497,7 @@
 
         socket.onopen = () => {
             if (!running) return;
+            console.log('[ELISY254] Deriv WebSocket OPEN');
             reconnectAttempts = 0;
             updateConnectionStatus('connecting');
 
@@ -543,6 +544,7 @@
             try {
                 const data = JSON.parse(msg.data);
 
+                console.log('[ELISY254] Deriv message:', data);
                 if (data.error || Array.isArray(data.errors)) {
                     const message =
                         data.error?.message ||
