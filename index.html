@@ -266,10 +266,10 @@
             <div class="metric-row"><span>Digit Setup:</span><strong id="digitSetup">WAIT</strong></div>
         </div>
         <div class="card signal-engine forex-engine">
-            <h2>📈 FOREX / MT5 SIGNAL BOX</h2>
+            <h2>📈 LIVE MARKET DIRECTION</h2>
             <p class="engine-subtitle">BUY / SELL MARKET DIRECTION</p>
             <div class="big-signal" id="forexSignal">WAITING</div>
-            <div class="signal-detail" id="forexReason">Select a Forex/MT5 symbol and start the live feed.</div>
+            <div class="signal-detail" id="forexReason">Uses live Deriv quote data for market direction.</div>
             <div class="metric-row"><span>Direction:</span><strong id="forexDirection">-</strong></div>
             <div class="metric-row"><span>Trend Score:</span><strong id="forexScore">-</strong></div>
         </div>
@@ -349,7 +349,12 @@
         calculateEMA(digits, windowSize = 15) {
             if (digits.length < windowSize) return 4.5;
             const slice = digits.slice(-windowSize);
-            return slice.reduce((a, b) => a + b, 0) / windowSize;
+            const alpha = 2 / (windowSize + 1);
+            let ema = slice[0];
+            for (let i = 1; i < slice.length; i++) {
+                ema = alpha * slice[i] + (1 - alpha) * ema;
+            }
+            return ema;
         }
 
         // Streak Detector
@@ -398,6 +403,7 @@
     let keepAliveTimer = null;
     let reconnectTimer = null;
     let reconnectAttempts = 0;
+    let liveWatchdogTimer = null;
 
     const engine = new StrictQuantEngine();
     let parityChart, barrierChart;
@@ -405,6 +411,7 @@
     window.onload = () => {
         initCharts();
         onContractChange();
+        startEngine();
     };
 
     function onContractChange() {
@@ -454,7 +461,8 @@
         stopEngine();
         digits = [];
         running = true;
-        currentMarket = document.getElementById('market').value || null;
+        const selectedMarket = document.getElementById('market').value;
+        currentMarket = selectedMarket || '1HZ100V';
         reconnectAttempts = 0;
         updateConnectionStatus('connecting');
         connectSocket();
@@ -494,6 +502,18 @@
                 req_id: 1
             }));
 
+            requestMarketData();
+
+            if (liveWatchdogTimer) clearTimeout(liveWatchdogTimer);
+            liveWatchdogTimer = setTimeout(() => {
+                if (running && (!socket || socket.readyState !== WebSocket.OPEN)) {
+                    scheduleReconnect();
+                } else if (running && digits.length === 0) {
+                    updateConnectionStatus('reconnecting');
+                    try { socket.close(); } catch (_) {}
+                }
+            }, 8000);
+
             keepAliveTimer = setInterval(() => {
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     socket.send(JSON.stringify({ ping: 1, req_id: 99 }));
@@ -522,10 +542,13 @@
                     loadDerivMarkets(data.active_symbols);
 
                     if (!currentMarket && derivMarkets.length) {
-                        currentMarket = derivMarkets[0].symbol;
+                        const preferred = derivMarkets.find(item => item.symbol === '1HZ100V')
+                            || derivMarkets.find(item => /^1HZ|^R_/.test(item.symbol))
+                            || derivMarkets[0];
+                        currentMarket = preferred ? preferred.symbol : null;
                     }
 
-                    if (currentMarket) {
+                    if (currentMarket && socket && socket.readyState === WebSocket.OPEN) {
                         requestMarketData();
                     } else {
                         updateConnectionStatus('reconnecting');
@@ -544,18 +567,20 @@
 
                     if (digits.length > 200) digits = digits.slice(-200);
                     updateDashboard();
-
-                    if (digits.length >= 30) evaluateSignal();
                     return;
                 }
 
                 if (data.msg_type === 'tick' && data.tick) {
-                    const quote = data.tick.quote;
-                    const digit = Number(String(quote).replace(/[^0-9]/g, '').slice(-1));
+                    const quote = Number(data.tick.quote);
+                    const digit = Number(String(data.tick.quote).replace(/[^0-9]/g, '').slice(-1));
 
                     if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
                         if (data.tick.symbol) currentMarket = data.tick.symbol;
 
+                        if (liveWatchdogTimer) {
+                            clearTimeout(liveWatchdogTimer);
+                            liveWatchdogTimer = null;
+                        }
                         updateConnectionStatus('live');
                         digits.push(digit);
 
@@ -582,14 +607,16 @@
             updateConnectionStatus('reconnecting');
         };
 
-        socket.onclose = () => {
+        socket.onclose = (event) => {
             if (keepAliveTimer) {
                 clearInterval(keepAliveTimer);
                 keepAliveTimer = null;
             }
 
             if (running) {
+                const code = event && event.code ? ' (' + event.code + ')' : '';
                 updateConnectionStatus('reconnecting');
+                setSignalUI('RECONNECTING', 0, 'WAIT', 'Deriv WebSocket disconnected' + code + '. Retrying automatically.', 'var(--accent-yellow)');
                 scheduleReconnect();
             } else {
                 updateConnectionStatus('offline');
@@ -598,7 +625,8 @@
     }
 
     function requestMarketData() {
-        if (!socket || socket.readyState !== WebSocket.OPEN || !currentMarket) return;
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+        if (!currentMarket) currentMarket = '1HZ100V';
 
         digits = [];
         updateDashboard();
@@ -724,6 +752,7 @@
             socket = null;
         }
         if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+        if (liveWatchdogTimer) { clearTimeout(liveWatchdogTimer); liveWatchdogTimer = null; }
         updateConnectionStatus('offline');
         setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
     }
@@ -770,7 +799,7 @@
             forexEl.textContent = isForex ? 'WAITING' : 'SELECT FOREX';
             forexDir.textContent = '-';
             forexScore.textContent = '-';
-            forexReason.textContent = isForex ? 'Waiting for enough live price ticks for trend analysis.' : 'Select a Forex symbol such as EUR/USD, GBP/USD or USD/JPY.';
+            forexReason.textContent = isForex ? 'Waiting for enough live price ticks for trend analysis.' : 'Select a live Deriv Forex symbol for price-direction analysis.';
             return;
         }
         const values = digits.map(d => d);
