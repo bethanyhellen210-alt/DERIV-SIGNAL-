@@ -463,6 +463,11 @@
         running = true;
         const selectedMarket = document.getElementById('market').value;
         currentMarket = selectedMarket || '1HZ100V';
+        const marketSelect = document.getElementById('market');
+        if (marketSelect && !selectedMarket) {
+            marketSelect.innerHTML = '<option value="1HZ100V">VOLATILITY 100 (1HZ100V)</option>';
+            marketSelect.value = '1HZ100V';
+        }
         reconnectAttempts = 0;
         updateConnectionStatus('connecting');
         connectSocket();
@@ -496,9 +501,9 @@
             updateConnectionStatus('connecting');
 
             // Public market-data connection: no login/token required.
+            // Current Deriv active_symbols request: product_type is no longer required.
             socket.send(JSON.stringify({
                 active_symbols: 'brief',
-                product_type: 'basic',
                 req_id: 1
             }));
 
@@ -577,6 +582,10 @@
                     });
 
                     if (digits.length > 200) digits = digits.slice(-200);
+                    if (digits.length > 0 && liveWatchdogTimer) {
+                        clearTimeout(liveWatchdogTimer);
+                        liveWatchdogTimer = null;
+                    }
                     updateDashboard();
                     return;
                 }
