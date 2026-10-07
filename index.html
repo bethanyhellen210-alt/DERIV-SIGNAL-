@@ -462,76 +462,146 @@
 
     function connectSocket() {
         if (!running) return;
-        if (socket) { try { socket.onclose = null; socket.close(); } catch (_) {} }
-        if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+
+        if (socket) {
+            try { socket.onclose = null; socket.close(); } catch (_) {}
+            socket = null;
+        }
+        if (keepAliveTimer) {
+            clearInterval(keepAliveTimer);
+            keepAliveTimer = null;
+        }
+
         updateConnectionStatus('connecting');
-        socket = new WebSocket('wss://api.derivws.com/trading/v1/options/ws/public');
+
+        try {
+            socket = new WebSocket('wss://ws.binaryws.com/websockets/v3');
+        } catch (err) {
+            updateConnectionStatus('reconnecting');
+            scheduleReconnect();
+            return;
+        }
 
         socket.onopen = () => {
+            if (!running) return;
             reconnectAttempts = 0;
             updateConnectionStatus('connecting');
-            socket.send(JSON.stringify({ active_symbols: 'brief', req_id: 1 }));
+
+            // Public market-data connection: no login/token required.
+            socket.send(JSON.stringify({
+                active_symbols: 'brief',
+                req_id: 1
+            }));
+
             keepAliveTimer = setInterval(() => {
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     socket.send(JSON.stringify({ ping: 1, req_id: 99 }));
                 }
             }, 30000);
         };
+
         socket.onmessage = (msg) => {
             if (!running) return;
+
             try {
                 const data = JSON.parse(msg.data);
+
                 if (data.error || Array.isArray(data.errors)) {
-                    const message = data.error?.message || data.errors?.map(e => e.message).join('; ') || 'Deriv market-data connection error.';
+                    const message =
+                        data.error?.message ||
+                        data.errors?.map(e => e.message).join('; ') ||
+                        'Deriv market-data connection error.';
+                    updateConnectionStatus('reconnecting');
                     setSignalUI('ERROR', 0, 'FAIL', message, 'var(--accent-red)');
+                    scheduleReconnect();
                     return;
                 }
+
                 if (data.msg_type === 'active_symbols' && Array.isArray(data.active_symbols)) {
                     loadDerivMarkets(data.active_symbols);
+
+                    if (!currentMarket && derivMarkets.length) {
+                        currentMarket = derivMarkets[0].symbol;
+                    }
+
                     if (currentMarket) {
                         requestMarketData();
+                    } else {
+                        updateConnectionStatus('reconnecting');
+                        scheduleReconnect();
                     }
                     return;
                 }
+
                 if (data.msg_type === 'history' && data.history && Array.isArray(data.history.prices)) {
                     data.history.prices.forEach(quote => {
                         const digit = Number(String(quote).replace(/[^0-9]/g, '').slice(-1));
-                        if (Number.isInteger(digit) && digit >= 0 && digit <= 9) digits.push(digit);
+                        if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+                            digits.push(digit);
+                        }
                     });
+
                     if (digits.length > 200) digits = digits.slice(-200);
                     updateDashboard();
+
                     if (digits.length >= 30) evaluateSignal();
                     return;
                 }
-                if (data.tick) {
+
+                if (data.msg_type === 'tick' && data.tick) {
                     const quote = data.tick.quote;
                     const digit = Number(String(quote).replace(/[^0-9]/g, '').slice(-1));
+
                     if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
                         if (data.tick.symbol) currentMarket = data.tick.symbol;
+
                         updateConnectionStatus('live');
                         digits.push(digit);
+
                         if (digits.length > 200) digits.shift();
+
                         updateDashboard();
+
                         if (digits.length >= 30) evaluateSignal();
                     }
                 }
-            } catch (_) {
-                setSignalUI('ERROR', 0, 'FAIL', 'Invalid market-data message received.', 'var(--accent-red)');
+            } catch (err) {
+                setSignalUI(
+                    'ERROR',
+                    0,
+                    'FAIL',
+                    'Invalid Deriv market-data message received.',
+                    'var(--accent-red)'
+                );
             }
         };
+
         socket.onerror = () => {
-            if (running) updateConnectionStatus('reconnecting');
+            if (!running) return;
+            updateConnectionStatus('reconnecting');
         };
+
         socket.onclose = () => {
-            if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-            if (running) scheduleReconnect();
-            else updateConnectionStatus('offline');
+            if (keepAliveTimer) {
+                clearInterval(keepAliveTimer);
+                keepAliveTimer = null;
+            }
+
+            if (running) {
+                updateConnectionStatus('reconnecting');
+                scheduleReconnect();
+            } else {
+                updateConnectionStatus('offline');
+            }
         };
     }
 
     function requestMarketData() {
         if (!socket || socket.readyState !== WebSocket.OPEN || !currentMarket) return;
+
         digits = [];
+        updateDashboard();
+
         socket.send(JSON.stringify({
             ticks_history: currentMarket,
             count: 200,
@@ -539,12 +609,12 @@
             style: 'ticks',
             req_id: 2
         }));
+
         socket.send(JSON.stringify({
             ticks: currentMarket,
             subscribe: 1,
             req_id: 3
         }));
-        updateDashboard();
     }
 
     function loadDerivMarkets(symbols) {
