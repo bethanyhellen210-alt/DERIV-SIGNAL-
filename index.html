@@ -227,6 +227,8 @@
         .sniper-controls select{width:100%;min-width:0}
         .sniper-start{grid-column:1/-1;width:100%;padding:14px;font-size:1rem}
         @media(max-width:760px){.top-nav{justify-content:flex-start}.sniper-layout{grid-template-columns:1fr}.account-side{position:static}.sniper-controls{grid-template-columns:1fr}.sniper-start{grid-column:auto}}
+    
+        .app-page{display:none;min-width:0}.app-page.active{display:block}.page-title{margin-bottom:14px}.page-title h2{font-size:1.35rem;letter-spacing:.5px}.page-title p{color:var(--text-muted);font-size:.78rem;margin-top:4px}.page-stack{display:flex;flex-direction:column;gap:16px}.page-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.page-shortcut{display:block;text-decoration:none;color:var(--text-main);text-align:left;padding:24px;border:1px solid var(--card-border);border-radius:12px;background:#151d30}.page-shortcut strong{display:block;font-size:1.05rem;margin-bottom:6px}.page-shortcut span{color:var(--text-muted);font-size:.8rem}@media(max-width:700px){.page-shortcuts{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
@@ -247,6 +249,21 @@
         <a href="#transactions">TRANSACTIONS</a>
     </nav>
 
+
+    <div id="page-dashboard" class="app-page active">
+      <div class="card page-title"><h2>DASHBOARD</h2><p>ELISY254 trading workspace</p></div>
+      <div class="page-shortcuts">
+        <a class="page-shortcut" href="#forex-signal"><strong>FOREX SIGNAL</strong><span>Forex market direction and live signal analysis only.</span></a>
+        <a class="page-shortcut" href="#sniper-entry"><strong>SNIPER ENTRY</strong><span>Deriv analysis engine and automatic execution.</span></a>
+        <a class="page-shortcut" href="#transactions"><strong>TRANSACTIONS</strong><span>Monitor executed contracts and results.</span></a>
+      </div>
+    </div>
+    <div id="page-forex" class="app-page">
+      <div class="card page-title"><h2>FOREX SIGNAL</h2><p>FOREX ONLY • MARKET DIRECTION ANALYSIS</p></div>
+      <div id="forex-page-content" class="page-stack"></div>
+    </div>
+
+    <div id="page-sniper" class="app-page"><div id="sniper-content" class="page-stack">
     <div id="sniper-entry" class="sniper-layout">
       <aside class="card account-live account-side" id="derivAccountCard">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
@@ -301,7 +318,8 @@
       </main>
     </div>
 
-    <div id="transactions"></div>
+    </div></div>
+    <div id="transactions" class="app-page"><div class="card page-title"><h2>TRANSACTIONS</h2><p>LIVE AUTO-TRADE TRANSACTION MONITOR</p></div><div id="transactionList" class="page-stack"><div class="signal-detail">No transactions yet. Start Sniper Entry analysis and auto trade to see executions here.</div></div></div>
     <div class="card risk-control" id="riskControlCard">
         <h3>RISK CONTROL</h3>
         <div class="grid-2" style="margin-top:12px;gap:12px;">
