@@ -209,6 +209,24 @@
         input[type="checkbox"]{accent-color:var(--accent-green);width:18px;height:18px}
         input[type="checkbox"]{accent-color:var(--accent-green);width:18px;height:18px}
         .status{display:inline-block;margin:8px auto 0;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.6px}.status-live{background:#14532d;color:#86efac}.status-connecting,.status-reconnecting{background:#78350f;color:#fde68a}.status-offline{background:#450a0a;color:#fca5a5}
+    
+        /* ELISY254 horizontal app navigation + Sniper Entry layout */
+        .top-nav{display:flex;align-items:center;justify-content:center;gap:6px;overflow-x:auto;white-space:nowrap;background:#101827;border:1px solid var(--card-border);border-radius:12px;padding:8px;position:sticky;top:8px;z-index:20}
+        .top-nav a{color:var(--text-muted);text-decoration:none;font-size:.78rem;font-weight:800;letter-spacing:.5px;padding:11px 16px;border-radius:8px}
+        .top-nav a:hover,.top-nav a.active{background:#1e293b;color:var(--text-main)}
+        .sniper-layout{display:grid;grid-template-columns:minmax(210px,280px) 1fr;gap:16px;align-items:start}
+        .account-side{position:sticky;top:64px}
+        .account-side .signal-card{padding:14px}
+        .account-mode{width:100%;min-width:0;font-size:1rem;font-weight:800}
+        .sniper-main{min-width:0}
+        .sniper-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+        .sniper-heading h2{font-size:1.45rem;letter-spacing:.5px}
+        .sniper-heading p{color:var(--text-muted);font-size:.78rem;margin-top:4px}
+        .sniper-controls{display:grid;grid-template-columns:repeat(2,minmax(160px,1fr));gap:12px}
+        .sniper-controls .control-group{min-width:0}
+        .sniper-controls select{width:100%;min-width:0}
+        .sniper-start{grid-column:1/-1;width:100%;padding:14px;font-size:1rem}
+        @media(max-width:760px){.top-nav{justify-content:flex-start}.sniper-layout{grid-template-columns:1fr}.account-side{position:static}.sniper-controls{grid-template-columns:1fr}.sniper-start{grid-column:auto}}
     </style>
 </head>
 <body>
@@ -220,7 +238,17 @@
         <p>LIVE DERIV TICK ANALYSIS • STATISTICAL SIGNAL FILTERS</p>
     </div>
 
-    <div class="card account-live" id="derivAccountCard">
+    <div id="dashboard"></div>
+
+    <nav class="top-nav" aria-label="Main navigation">
+        <a href="#dashboard" class="active">DASHBOARD</a>
+        <a href="#forex-signal">FOREX SIGNAL</a>
+        <a href="#sniper-entry">SNIPER ENTRY</a>
+        <a href="#transactions">TRANSACTIONS</a>
+    </nav>
+
+    <div id="sniper-entry" class="sniper-layout">
+      <aside class="card account-live account-side" id="derivAccountCard">
         <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
             <div>
                 <h3 style="color:var(--accent-blue)">DERIV ACCOUNT</h3>
@@ -248,8 +276,32 @@
             <label style="display:flex;gap:8px;align-items:center"><input id="realTradeConfirm" type="checkbox"> I CONFIRM REAL-MONEY TRADING</label>
         </div>
         <div id="tradeStatus" class="signal-detail" style="margin-top:10px">Auto Trade OFF. Connect a Deriv account first.</div>
+      </aside>
+      <main class="sniper-main">
+        <div class="card" id="sniperControlsCard">
+          <div class="sniper-heading"><div><h2>SNIPER ENTRY</h2><p>OUR ANALYSIS ENGINE • LIVE DERIV DATA → SIGNAL → AUTO TRADE</p></div><div id="sniperStatus" class="status status-offline">● READY</div></div>
+          <div class="sniper-controls">
+            <div class="control-group">
+              <label for="accountMode">Account Mode</label>
+              <select id="accountMode" class="account-mode" onchange="setAccountMode(this.value)"><option value="demo">DEMO</option><option value="real">REAL</option></select>
+            </div>
+            <div class="control-group">
+              <label for="market">Select Market</label>
+              <select id="market" onchange="if(running) startEngine()"><option value="">CONNECTING TO DERIV...</option></select>
+            </div>
+            <div class="control-group">
+              <label for="contract">Select Contract Type</label>
+              <select id="contract" onchange="onContractChange()"><option value="EVEN">EVEN</option><option value="ODD">ODD</option><option value="OVER">OVER</option><option value="UNDER">UNDER</option><option value="MATCH">MATCH</option><option value="DIFFER">DIFFER</option></select>
+            </div>
+            <div class="control-group" id="barrierGroup" style="display:none"><label for="barrier">Digit Barrier</label><select id="barrier" onchange="onBarrierChange()"><option value="0">Digit 0</option><option value="1">Digit 1</option><option value="2">Digit 2</option><option value="3">Digit 3</option><option value="4" selected>Digit 4</option><option value="5">Digit 5</option><option value="6">Digit 6</option><option value="7">Digit 7</option><option value="8">Digit 8</option></select></div>
+            <button class="btn-start sniper-start" onclick="startEngine()">START ANALYSIS</button>
+          </div>
+          <div class="signal-detail" style="margin-top:12px">Sniper Entry runs the analysis engine. When auto-trade is enabled in the account panel, a confirmed setup can proceed to auto trade subject to the selected account and risk controls.</div>
+        </div>
+      </main>
     </div>
 
+    <div id="transactions"></div>
     <div class="card risk-control" id="riskControlCard">
         <h3>RISK CONTROL</h3>
         <div class="grid-2" style="margin-top:12px;gap:12px;">
@@ -269,7 +321,7 @@
         <div id="riskReason" class="signal-detail" style="margin-top:10px;">Connect Deriv to load the real account balance.</div>
     </div>
 
-    <!-- Controls Bar -->
+    <!-- Legacy Controls retained for engine compatibility -->
     <div class="card controls">
         <div class="control-group">
             <label for="market">Market Symbol</label>
