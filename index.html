@@ -464,7 +464,7 @@
         if (socket) { try { socket.onclose = null; socket.close(); } catch (_) {} }
         if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
         updateConnectionStatus('connecting');
-        socket = new WebSocket('wss://ws.binaryws.com/websockets/v3?app_id=1089');
+        socket = new WebSocket('wss://ws.binaryws.com/websockets/v3');
 
         socket.onopen = () => {
             reconnectAttempts = 0;
