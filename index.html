@@ -219,13 +219,7 @@
         <div class="control-group">
             <label for="market">Market Symbol</label>
             <select id="market" onchange="if(running) startEngine()">
-                <option value="R_10">Volatility 10 Index</option>
-                <option value="R_25">Volatility 25 Index</option>
-                <option value="R_50">Volatility 50 Index</option>
-                <option value="R_75">Volatility 75 Index</option>
-                <option value="R_100">Volatility 100 Index</option>
-                <option value="1HZ10V">Volatility 10 (1s) Index</option>
-                <option value="1HZ100V">Volatility 100 (1s) Index</option>
+                <option value="">CONNECTING TO DERIV...</option>
             </select>
         </div>
 
@@ -401,6 +395,7 @@
     let reconnectTimer = null;
     let reconnectAttempts = 0;
     let currentMarket = null;
+    let derivMarkets = [];
 
     const engine = new StrictQuantEngine();
     let parityChart, barrierChart;
@@ -472,7 +467,7 @@
         socket.onopen = () => {
             reconnectAttempts = 0;
             updateConnectionStatus('live');
-            socket.send(JSON.stringify({ ticks: currentMarket, subscribe: 1 }));
+            socket.send(JSON.stringify({ active_symbols: 'brief', req_id: 1 }));
         };
         socket.onmessage = (msg) => {
             if (!running) return;
@@ -483,10 +478,18 @@
                     try { socket.close(); } catch (_) {}
                     return;
                 }
+                if (data.msg_type === 'active_symbols' && Array.isArray(data.active_symbols)) {
+                    loadDerivMarkets(data.active_symbols);
+                    if (currentMarket) {
+                        socket.send(JSON.stringify({ ticks: currentMarket, subscribe: 1, req_id: 2 }));
+                    }
+                    return;
+                }
                 if (data.tick) {
                     const quote = data.tick.quote;
                     const digit = Number(String(quote).replace(/[^0-9]/g, '').slice(-1));
                     if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
+                        if (data.tick.symbol) currentMarket = data.tick.symbol;
                         digits.push(digit);
                         if (digits.length > 200) digits.shift();
                         updateDashboard();
@@ -501,6 +504,43 @@
             updateConnectionStatus('offline');
             if (running) scheduleReconnect();
         };
+    }
+
+    function loadDerivMarkets(symbols) {
+        const select = document.getElementById('market');
+        if (!select) return;
+
+        derivMarkets = symbols
+            .filter(item => item && (item.underlying_symbol || item.symbol))
+            .map(item => ({
+                symbol: item.underlying_symbol || item.symbol,
+                name: item.underlying_symbol_name || item.display_name || item.underlying_symbol || item.symbol
+            }))
+            .filter((item, index, list) => list.findIndex(x => x.symbol === item.symbol) === index)
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        const previous = currentMarket || select.value;
+        select.innerHTML = '<option value="">SELECT MARKET FROM DERIV</option>';
+
+        derivMarkets.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.symbol;
+            option.textContent = item.name + ' (' + item.symbol + ')';
+            select.appendChild(option);
+        });
+
+        const exists = derivMarkets.some(item => item.symbol === previous);
+        if (exists) {
+            select.value = previous;
+            currentMarket = previous;
+        } else if (derivMarkets.length) {
+            select.value = derivMarkets[0].symbol;
+            currentMarket = derivMarkets[0].symbol;
+        }
+
+        if (running && currentMarket) {
+            socket.send(JSON.stringify({ ticks: currentMarket, subscribe: 1, req_id: 2 }));
+        }
     }
 
     function scheduleReconnect() {
