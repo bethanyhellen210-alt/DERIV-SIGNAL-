@@ -238,7 +238,7 @@
 
         <div class="control-group" id="barrierGroup" style="display: none;">
             <label for="barrier">Digit Barrier</label>
-            <select id="barrier" onchange="evaluateSignal()">
+            <select id="barrier" onchange="onBarrierChange()">
                 <option value="0">Digit 0</option>
                 <option value="1">Digit 1</option>
                 <option value="2">Digit 2</option>
@@ -426,7 +426,6 @@
 
     const engine = new StrictQuantEngine();
     let parityChart, barrierChart;
-
     window.onload = () => {
         try { initCharts(); } catch (err) { console.warn('[ELISY254] Chart init skipped:', err); }
         onContractChange();
@@ -443,7 +442,13 @@
             barrierGroup.style.display = 'none';
         }
 
-        if (digits.length >= 30) evaluateSignal();
+        // A new contract/barrier is a new DBot setup. Never carry an old
+        // locked signal into a different contract type.
+        resetDigitSignalLock();
+        if (digits.length >= 30) {
+            evaluateSignal();
+            updateDualSignalBoxes();
+        }
     }
 
     function initCharts() {
@@ -757,8 +762,7 @@
         if (raw.includes('stock')) return 'STOCKS';
         if (raw.includes('etf')) return 'ETFs';
         if (raw.includes('derived')) return 'DERIVED INDICES';
-        if (raw.includes('financial')) return 'FINANCIAL';
-        const text = (name + ' ' + symbol).toLowerCase();
+        if (raw.includes('financial')) return 'FINANCIAL';        const text = (name + ' ' + symbol).toLowerCase();
         if (text.includes('boom') || text.includes('crash')) return 'BOOM & CRASH';
         if (text.includes('jump')) return 'JUMP INDICES';
         if (text.includes('step')) return 'STEP INDICES';
@@ -860,46 +864,109 @@
         digitSignalState.lockUntilTick = 0;
     }
 
-    function getDigitCandidate() {
+    function onBarrierChange() {
+        resetDigitSignalLock();
+        if (digits.length >= 30) {
+            evaluateSignal();
+            updateDualSignalBoxes();
+        }
+    }
+
+    function getContractCandidate() {
         const sample = digits.slice(-100);
         if (sample.length < 30) return null;
 
+        const contract = document.getElementById('contract').value;
+        const barrier = parseInt(document.getElementById('barrier').value, 10);
+        const recent = sample.slice(-20);
         const counts = Array(10).fill(0);
         sample.forEach(d => counts[d]++);
-        const recent = sample.slice(-20);
         const recentCounts = Array(10).fill(0);
         recent.forEach(d => recentCounts[d]++);
 
-        // Combine the long sample with the recent window instead of allowing
-        // one or two ticks to flip the prediction.
-        let bestDigit = 0;
-        let bestScore = -Infinity;
-        for (let d = 0; d < 10; d++) {
-            const longRate = counts[d] / sample.length;
-            const recentRate = recentCounts[d] / recent.length;
-            const score = (longRate * 0.65) + (recentRate * 0.35);
-            if (score > bestScore) {
-                bestScore = score;
-                bestDigit = d;
-            }
+        const rate = predicate => sample.filter(predicate).length / sample.length;
+        const recentRate = predicate => recent.filter(predicate).length / recent.length;
+
+        if (contract === 'EVEN') {
+            const score = rate(d => d % 2 === 0) * 0.65 + recentRate(d => d % 2 === 0) * 0.35;
+            return score >= 0.58 ? { signal: 'EVEN', digit: null, score } : { signal: 'WAIT', digit: null, score };
         }
 
-        const confidence = bestScore;
-        // Do not manufacture a trade when the digit distribution is too flat.
-        if (confidence < 0.135) return { signal: 'WAIT', digit: bestDigit, confidence };
-        return { signal: 'DIGIT ' + bestDigit, digit: bestDigit, confidence };
+        if (contract === 'ODD') {
+            const score = rate(d => d % 2 !== 0) * 0.65 + recentRate(d => d % 2 !== 0) * 0.35;
+            return score >= 0.58 ? { signal: 'ODD', digit: null, score } : { signal: 'WAIT', digit: null, score };
+        }
+
+        if (contract === 'OVER') {
+            const predicate = d => d > barrier;
+            const score = rate(predicate) * 0.65 + recentRate(predicate) * 0.35;
+            return score >= 0.60
+                ? { signal: 'OVER ' + barrier, digit: null, score }
+                : { signal: 'WAIT', digit: null, score };
+        }
+
+        if (contract === 'UNDER') {
+            const predicate = d => d < barrier;
+            const score = rate(predicate) * 0.65 + recentRate(predicate) * 0.35;
+            return score >= 0.60
+                ? { signal: 'UNDER ' + barrier, digit: null, score }
+                : { signal: 'WAIT', digit: null, score };
+        }
+
+        if (contract === 'MATCH') {
+            let hotDigit = 0;
+            let bestScore = -Infinity;
+            for (let d = 0; d < 10; d++) {
+                const score = (counts[d] / sample.length) * 0.65 +
+                    (recentCounts[d] / recent.length) * 0.35;
+                if (score > bestScore) {
+                    bestScore = score;
+                    hotDigit = d;
+                }
+            }
+            return bestScore >= 0.135
+                ? { signal: 'MATCH ' + hotDigit, digit: hotDigit, score: bestScore }
+                : { signal: 'WAIT', digit: hotDigit, score: bestScore };
+        }
+
+        if (contract === 'DIFFER') {
+            let coldDigit = 0;
+            let maxAbsence = -1;
+            for (let d = 0; d < 10; d++) {
+                let absence = sample.length;
+                for (let i = sample.length - 1; i >= 0; i--) {
+                    if (sample[i] === d) {
+                        absence = sample.length - 1 - i;
+                        break;
+                    }
+                }
+                if (absence > maxAbsence) {
+                    maxAbsence = absence;
+                    coldDigit = d;
+                }
+            }
+            return maxAbsence >= 12
+                ? { signal: 'DIFFER ' + coldDigit, digit: coldDigit, score: maxAbsence }
+                : { signal: 'WAIT', digit: coldDigit, score: maxAbsence };
+        }
+
+        return { signal: 'WAIT', digit: null, score: 0 };
     }
 
     function updateDigitSignalLock() {
         const n = digits.length;
         if (n < 30 || n < digitSignalState.nextAnalysisTick) return;
+
         digitSignalState.lastAnalysisTick = n;
         digitSignalState.nextAnalysisTick = n + DIGIT_ANALYSIS_STEP;
 
-        const candidate = getDigitCandidate();
+        const candidate = getContractCandidate();
         if (!candidate) return;
 
-        if (candidate.signal === digitSignalState.candidateSignal && candidate.digit === digitSignalState.candidateDigit) {
+        if (
+            candidate.signal === digitSignalState.candidateSignal &&
+            candidate.digit === digitSignalState.candidateDigit
+        ) {
             digitSignalState.candidateConfirmations++;
         } else {
             digitSignalState.candidateSignal = candidate.signal;
@@ -907,8 +974,7 @@
             digitSignalState.candidateConfirmations = 1;
         }
 
-        // Keep an existing signal stable. It can only be replaced after its
-        // lock period and after the new direction is confirmed twice.
+        // Do not change a released DBot setup while its lock window is active.
         if (digitSignalState.lockedSignal && n < digitSignalState.lockUntilTick) return;
 
         if (digitSignalState.candidateConfirmations >= DIGIT_CONFIRMATIONS) {
@@ -926,33 +992,39 @@
         const digitSetup = document.getElementById('digitSetup');
         if (!digitEl) return;
 
-        // Digit engine is deliberately isolated from MT5 and only refreshes
-        // its trading signal in confirmed analysis windows, not every tick.
         if (n < 30) {
             digitEl.textContent = 'WAITING';
-            digitPred.textContent = 'Collecting 30+ live Deriv ticks before the first signal.';
+            digitPred.textContent = 'Collecting 30+ live Deriv ticks before the first contract signal.';
             predicted.textContent = '-';
             digitSetup.textContent = 'WARMUP';
+            digitEl.style.color = 'var(--text-muted)';
             return;
         }
 
         updateDigitSignalLock();
         const state = digitSignalState;
+        const contract = document.getElementById('contract').value;
+        const barrier = document.getElementById('barrier').value;
 
         if (!state.lockedSignal) {
             digitEl.textContent = 'CONFIRMING';
-            digitPred.textContent = 'Analyzing multiple tick windows. No DBot signal is released yet.';
+            digitPred.textContent =
+                'Confirming the selected ' + contract +
+                (contract === 'OVER' || contract === 'UNDER' ? ' ' + barrier : '') +
+                ' setup across multiple tick windows. No signal is released yet.';
             predicted.textContent = state.candidateDigit ?? '-';
             digitSetup.textContent = 'CONFIRMING';
             digitEl.style.color = 'var(--accent-yellow)';
             return;
         }
 
-        predicted.textContent = state.lockedDigit;
+        const remaining = Math.max(0, state.lockUntilTick - n);
+        predicted.textContent = state.lockedDigit ?? '-';
         digitEl.textContent = state.lockedSignal;
-        digitSetup.textContent = 'LOCKED';
-        digitPred.textContent = 'ONE CONFIRMED SIGNAL · LOCKED FOR ' +
-            Math.max(0, state.lockUntilTick - n) + ' MORE TICKS';
+        digitSetup.textContent = state.lockedSignal === 'WAIT' ? 'WAIT' : 'LOCKED';
+        digitPred.textContent = state.lockedSignal === 'WAIT'
+            ? 'No statistically strong setup. Continue collecting ticks.'
+            : 'ONE CONTRACT SETUP · LOCKED FOR ' + remaining + ' MORE TICKS';
         digitEl.style.color = state.lockedSignal === 'WAIT'
             ? 'var(--text-muted)' : 'var(--accent-green)';
     }
@@ -976,8 +1048,7 @@
             barrierChart.update();
         }
 
-        evaluateSignal();
-        updateDualSignalBoxes();
+        evaluateSignal();        updateDualSignalBoxes();
     }
     // ==========================================
     // STRICT SINGLE-CONTRACT EVALUATION LOGIC
