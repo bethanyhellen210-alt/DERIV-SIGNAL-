@@ -469,7 +469,7 @@
         socket.onopen = () => {
             reconnectAttempts = 0;
             updateConnectionStatus('connecting');
-            socket.send(JSON.stringify({ active_symbols: 'brief', contract_type: ['DIGITEVEN','DIGITODD','DIGITOVER','DIGITUNDER','DIGITMATCH','DIGITDIFF'], req_id: 1 }));
+            socket.send(JSON.stringify({ active_symbols: 'brief', req_id: 1 }));
             keepAliveTimer = setInterval(() => {
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     socket.send(JSON.stringify({ ping: 1, req_id: 99 }));
@@ -552,21 +552,42 @@
 
         derivMarkets = symbols
             .filter(item => item && (item.underlying_symbol || item.symbol))
-            .map(item => ({
-                symbol: item.underlying_symbol || item.symbol,
-                name: item.underlying_symbol_name || item.display_name || item.underlying_symbol || item.symbol
-            }))
+            .map(item => {
+                const symbol = item.underlying_symbol || item.symbol;
+                const name = item.underlying_symbol_name || item.display_name || symbol;
+                const market = item.market || item.underlying_symbol_type || 'other';
+                const subgroup = item.submarket || item.subgroup || '';
+                return {
+                    symbol,
+                    name,
+                    market,
+                    subgroup,
+                    label: formatMarketLabel(market, subgroup, name, symbol)
+                };
+            })
             .filter((item, index, list) => list.findIndex(x => x.symbol === item.symbol) === index)
-            .sort((a, b) => a.name.localeCompare(b.name));
+            .sort((a, b) => a.label.localeCompare(b.label) || a.name.localeCompare(b.name));
 
         const previous = currentMarket || select.value;
         select.innerHTML = '<option value="">SELECT MARKET FROM DERIV</option>';
 
+        const groups = new Map();
         derivMarkets.forEach(item => {
-            const option = document.createElement('option');
-            option.value = item.symbol;
-            option.textContent = item.name + ' (' + item.symbol + ')';
-            select.appendChild(option);
+            const key = item.label;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(item);
+        });
+
+        groups.forEach((items, label) => {
+            const group = document.createElement('optgroup');
+            group.label = label;
+            items.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.symbol;
+                option.textContent = item.name + ' (' + item.symbol + ')';
+                group.appendChild(option);
+            });
+            select.appendChild(group);
         });
 
         const exists = derivMarkets.some(item => item.symbol === previous);
@@ -581,6 +602,26 @@
         if (running && currentMarket) {
             updateConnectionStatus('live');
         }
+    }
+
+    function formatMarketLabel(market, subgroup, name, symbol) {
+        const raw = String(market || subgroup || '').toLowerCase();
+        if (raw.includes('forex')) return 'FOREX';
+        if (raw.includes('commodity') || raw.includes('commodit')) return 'COMMODITIES';
+        if (raw.includes('crypto')) return 'CRYPTOCURRENCIES';
+        if (raw.includes('indices') || raw.includes('index')) return 'INDICES';
+        if (raw.includes('synthetic')) return 'SYNTHETIC INDICES';
+        if (raw.includes('stock')) return 'STOCKS';
+        if (raw.includes('etf')) return 'ETFs';
+        if (raw.includes('derived')) return 'DERIVED INDICES';
+        if (raw.includes('financial')) return 'FINANCIAL';
+        const text = (name + ' ' + symbol).toLowerCase();
+        if (text.includes('boom') || text.includes('crash')) return 'BOOM & CRASH';
+        if (text.includes('jump')) return 'JUMP INDICES';
+        if (text.includes('step')) return 'STEP INDICES';
+        if (text.includes('volatility')) return 'VOLATILITY INDICES';
+        if (text.includes('gold') || text.includes('xau')) return 'GOLD / METALS';
+        return 'OTHER DERIV MARKETS';
     }
 
     function scheduleReconnect() {
