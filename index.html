@@ -464,12 +464,12 @@
         if (socket) { try { socket.onclose = null; socket.close(); } catch (_) {} }
         if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
         updateConnectionStatus('connecting');
-        socket = new WebSocket('wss://ws.binaryws.com/websockets/v3');
+        socket = new WebSocket('wss://api.derivws.com/trading/v1/options/ws/public');
 
         socket.onopen = () => {
             reconnectAttempts = 0;
             updateConnectionStatus('connecting');
-            socket.send(JSON.stringify({ active_symbols: 'brief', req_id: 1 }));
+            socket.send(JSON.stringify({ active_symbols: 'brief', contract_type: ['DIGITEVEN','DIGITODD','DIGITOVER','DIGITUNDER','DIGITMATCH','DIGITDIFF'], req_id: 1 }));
             keepAliveTimer = setInterval(() => {
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     socket.send(JSON.stringify({ ping: 1, req_id: 99 }));
@@ -480,17 +480,14 @@
             if (!running) return;
             try {
                 const data = JSON.parse(msg.data);
-                if (data.error) {
-                    setSignalUI('ERROR', 0, 'FAIL', data.error.message || 'Deriv returned an error.', 'var(--accent-red)');
-                    if (socket && socket.readyState === WebSocket.OPEN) {
-                        try { socket.send(JSON.stringify({ forget_all: 'ticks' })); } catch (_) {}
-                    }
+                if (data.error || Array.isArray(data.errors)) {
+                    const message = data.error?.message || data.errors?.map(e => e.message).join('; ') || 'Deriv market-data connection error.';
+                    setSignalUI('ERROR', 0, 'FAIL', message, 'var(--accent-red)');
                     return;
                 }
                 if (data.msg_type === 'active_symbols' && Array.isArray(data.active_symbols)) {
                     loadDerivMarkets(data.active_symbols);
                     if (currentMarket) {
-                        updateConnectionStatus('live');
                         requestMarketData();
                     }
                     return;
@@ -510,6 +507,7 @@
                     const digit = Number(String(quote).replace(/[^0-9]/g, '').slice(-1));
                     if (Number.isInteger(digit) && digit >= 0 && digit <= 9) {
                         if (data.tick.symbol) currentMarket = data.tick.symbol;
+                        updateConnectionStatus('live');
                         digits.push(digit);
                         if (digits.length > 200) digits.shift();
                         updateDashboard();
