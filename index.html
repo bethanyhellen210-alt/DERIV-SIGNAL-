@@ -454,8 +454,9 @@
         stopEngine();
         digits = [];
         running = true;
-        currentMarket = document.getElementById('market').value;
+        currentMarket = document.getElementById('market').value || null;
         reconnectAttempts = 0;
+        updateConnectionStatus('connecting');
         updateDashboard();
         connectSocket();
     }
@@ -475,7 +476,7 @@
         updateConnectionStatus('connecting');
 
         try {
-            socket = new WebSocket('wss://ws.binaryws.com/websockets/v3');
+            socket = new WebSocket('wss://ws.binaryws.com/websockets/v3?app_id=1089');
         } catch (err) {
             updateConnectionStatus('reconnecting');
             scheduleReconnect();
