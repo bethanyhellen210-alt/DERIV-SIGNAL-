@@ -202,7 +202,8 @@
         .badge-pass { background: #15803d; color: white; }
         .badge-fail { background: #b91c1c; color: white; }
         .badge-wait { background: #334155; color: white; }
-            .status{display:inline-block;margin:8px auto 0;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.6px}.status-live{background:#14532d;color:#86efac}.status-connecting,.status-reconnecting{background:#78350f;color:#fde68a}.status-offline{background:#450a0a;color:#fca5a5}
+            .signal-engine{min-height:250px;text-align:center}.engine-subtitle{font-size:.72rem;color:var(--text-muted);margin:6px 0 14px;letter-spacing:.8px}.big-signal{font-size:2.35rem;font-weight:900;letter-spacing:1px;margin:12px 0}.signal-detail{min-height:48px;padding:10px;background:#0b0f19;border-radius:8px;color:#cbd5e1;font-size:.86rem;line-height:1.35}.digit-engine{border-top:3px solid var(--accent-blue)}.forex-engine{border-top:3px solid var(--accent-green)}
+        .status{display:inline-block;margin:8px auto 0;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.6px}.status-live{background:#14532d;color:#86efac}.status-connecting,.status-reconnecting{background:#78350f;color:#fde68a}.status-offline{background:#450a0a;color:#fca5a5}
     </style>
 </head>
 <body>
@@ -252,6 +253,26 @@
 
         <button class="btn-start" onclick="startEngine()">START ENGINE</button>
         <button class="btn-stop" onclick="stopEngine()">STOP</button>
+    </div>
+
+    <!-- Dual Signal Engines -->
+    <div class="grid-2">
+        <div class="card signal-engine digit-engine">
+            <h2>🔢 DIGIT SIGNAL BOX</h2>
+            <p class="engine-subtitle">DERIV DIGIT PREDICTION</p>
+            <div class="big-signal" id="digitSignal">WAITING</div>
+            <div class="signal-detail" id="digitPrediction">Waiting for 30+ live ticks...</div>
+            <div class="metric-row"><span>Predicted Digit:</span><strong id="predictedDigit">-</strong></div>
+            <div class="metric-row"><span>Digit Setup:</span><strong id="digitSetup">WAIT</strong></div>
+        </div>
+        <div class="card signal-engine forex-engine">
+            <h2>📈 FOREX / MT5 SIGNAL BOX</h2>
+            <p class="engine-subtitle">BUY / SELL MARKET DIRECTION</p>
+            <div class="big-signal" id="forexSignal">WAITING</div>
+            <div class="signal-detail" id="forexReason">Select a Forex/MT5 symbol and start the live feed.</div>
+            <div class="metric-row"><span>Direction:</span><strong id="forexDirection">-</strong></div>
+            <div class="metric-row"><span>Trend Score:</span><strong id="forexScore">-</strong></div>
+        </div>
     </div>
 
     <!-- Live Execution & Metrics -->
@@ -656,6 +677,64 @@
         setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
     }
 
+    function updateDualSignalBoxes() {
+        const n = digits.length;
+        const digitEl = document.getElementById('digitSignal');
+        const digitPred = document.getElementById('digitPrediction');
+        const predicted = document.getElementById('predictedDigit');
+        const digitSetup = document.getElementById('digitSetup');
+        const forexEl = document.getElementById('forexSignal');
+        const forexReason = document.getElementById('forexReason');
+        const forexDir = document.getElementById('forexDirection');
+        const forexScore = document.getElementById('forexScore');
+        if (!digitEl || !forexEl) return;
+
+        if (n < 30) {
+            digitEl.textContent = 'WAITING';
+            digitPred.textContent = 'Waiting for 30+ live ticks...';
+            predicted.textContent = '-';
+            digitSetup.textContent = 'WARMUP';
+        } else {
+            const counts = Array(10).fill(0);
+            digits.forEach(d => counts[d]++);
+            let hot = 0;
+            for (let d=1; d<10; d++) if (counts[d] > counts[hot]) hot = d;
+            const recent = digits.slice(-10);
+            const recentCounts = Array(10).fill(0);
+            recent.forEach(d => recentCounts[d]++);
+            let candidate = hot;
+            for (let d=0; d<10; d++) if (recentCounts[d] > recentCounts[candidate]) candidate = d;
+            const freq = counts[candidate] / n;
+            const recentFreq = recentCounts[candidate] / recent.length;
+            predicted.textContent = candidate;
+            digitEl.textContent = 'DIGIT ' + candidate;
+            digitSetup.textContent = recentFreq >= 0.3 ? 'STRONG' : 'WATCH';
+            digitPred.textContent = 'Statistical digit prediction from live ticks. Baseline remains 10% per digit; this is not a guaranteed outcome.';
+            digitEl.style.color = recentFreq >= 0.3 ? 'var(--accent-green)' : 'var(--accent-blue)';
+        }
+
+        const market = String(currentMarket || '').toUpperCase();
+        const isForex = /^FRX|^FOREX|USD|EUR|GBP|JPY|AUD|CAD|CHF|NZD/.test(market) && !/VOLATILITY|BOOM|CRASH|STEP|JUMP/.test(market);
+        if (!isForex || n < 30) {
+            forexEl.textContent = isForex ? 'WAITING' : 'SELECT FOREX';
+            forexDir.textContent = '-';
+            forexScore.textContent = '-';
+            forexReason.textContent = isForex ? 'Waiting for enough live price ticks for trend analysis.' : 'Select a Forex symbol such as EUR/USD, GBP/USD or USD/JPY.';
+            return;
+        }
+        const values = digits.map(d => d);
+        const fast = values.slice(-10).reduce((a,b)=>a+b,0)/10;
+        const slow = values.slice(-30).reduce((a,b)=>a+b,0)/30;
+        const slope = values[values.length-1] - values[values.length-11];
+        const score = Math.max(-100, Math.min(100, Math.round((fast-slow)*20 + slope*8)));
+        const direction = score >= 12 ? 'BUY' : score <= -12 ? 'SELL' : 'WAIT';
+        forexEl.textContent = direction;
+        forexDir.textContent = direction;
+        forexScore.textContent = score;
+        forexEl.style.color = direction === 'BUY' ? 'var(--accent-green)' : direction === 'SELL' ? 'var(--accent-red)' : 'var(--text-muted)';
+        forexReason.textContent = 'Live Deriv tick trend proxy. This is a market-direction signal, not a direct MT5 broker feed. Connect MT5 later for true candle/indicator data.';
+    }
+
     function updateDashboard() {
         const sampleSize = digits.length;
         document.getElementById('sampleSize').innerText = `${sampleSize} / 30 ticks min`;
@@ -673,6 +752,7 @@
         barrierChart.update();
 
         evaluateSignal();
+        updateDualSignalBoxes();
     }
 
     // ==========================================
