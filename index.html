@@ -321,46 +321,6 @@
         <div id="riskReason" class="signal-detail" style="margin-top:10px;">Connect Deriv to load the real account balance.</div>
     </div>
 
-    <!-- Legacy Controls retained for engine compatibility -->
-    <div class="card controls">
-        <div class="control-group">
-            <label for="market">Market Symbol</label>
-            <select id="market" onchange="if(running) startEngine()">
-                <option value="">CONNECTING TO DERIV...</option>
-            </select>
-        </div>
-
-        <div class="control-group">
-            <label for="contract">Contract Target</label>
-            <select id="contract" onchange="onContractChange()">
-                <option value="EVEN">EVEN ONLY</option>
-                <option value="ODD">ODD ONLY</option>
-                <option value="OVER">OVER ONLY</option>
-                <option value="UNDER">UNDER ONLY</option>
-                <option value="MATCH">MATCH ONLY</option>
-                <option value="DIFFER">DIFFER ONLY</option>
-            </select>
-        </div>
-
-        <div class="control-group" id="barrierGroup" style="display: none;">
-            <label for="barrier">Digit Barrier</label>
-            <select id="barrier" onchange="onBarrierChange()">
-                <option value="0">Digit 0</option>
-                <option value="1">Digit 1</option>
-                <option value="2">Digit 2</option>
-                <option value="3">Digit 3</option>
-                <option value="4" selected>Digit 4</option>
-                <option value="5">Digit 5</option>
-                <option value="6">Digit 6</option>
-                <option value="7">Digit 7</option>
-                <option value="8">Digit 8</option>
-            </select>
-        </div>
-
-        <button class="btn-start" onclick="startEngine()">START ENGINE</button>
-        <button class="btn-stop" onclick="stopEngine()">STOP</button>
-    </div>
-
     <!-- Dual Signal Engines -->
     <div class="grid-2">
         <div class="card signal-engine digit-engine">
