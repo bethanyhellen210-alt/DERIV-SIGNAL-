@@ -712,7 +712,7 @@
         forexDir.textContent = direction;
         forexScore.textContent = score;
         forexEl.style.color = direction === 'BUY' ? 'var(--accent-green)' : direction === 'SELL' ? 'var(--accent-red)' : 'var(--text-muted)';
-        forexReason.textContent = 'Live Deriv tick trend proxy. This is a market-direction signal, not a direct MT5 broker feed. Connect MT5 later for true candle/indicator data.';
+        forexReason.textContent = 'Live market-direction signal.';
     }
 
     function updateDashboard() {
