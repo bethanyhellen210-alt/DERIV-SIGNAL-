@@ -462,7 +462,7 @@
         if (!running) return;
         if (socket) { try { socket.close(); } catch (_) {} }
         updateConnectionStatus('connecting');
-        socket = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
+        socket = new WebSocket('wss://api.derivws.com/trading/v1/options/ws/public');
 
         socket.onopen = () => {
             reconnectAttempts = 0;
@@ -481,8 +481,18 @@
                 if (data.msg_type === 'active_symbols' && Array.isArray(data.active_symbols)) {
                     loadDerivMarkets(data.active_symbols);
                     if (currentMarket) {
-                        socket.send(JSON.stringify({ ticks: currentMarket, subscribe: 1, req_id: 2 }));
+                        requestMarketData();
                     }
+                    return;
+                }
+                if (data.msg_type === 'history' && data.history && Array.isArray(data.history.prices)) {
+                    data.history.prices.forEach(quote => {
+                        const digit = Number(String(quote).replace(/[^0-9]/g, '').slice(-1));
+                        if (Number.isInteger(digit) && digit >= 0 && digit <= 9) digits.push(digit);
+                    });
+                    if (digits.length > 200) digits = digits.slice(-200);
+                    updateDashboard();
+                    if (digits.length >= 30) evaluateSignal();
                     return;
                 }
                 if (data.tick) {
@@ -493,6 +503,7 @@
                         digits.push(digit);
                         if (digits.length > 200) digits.shift();
                         updateDashboard();
+                        if (digits.length >= 30) evaluateSignal();
                     }
                 }
             } catch (_) {
@@ -504,6 +515,24 @@
             updateConnectionStatus('offline');
             if (running) scheduleReconnect();
         };
+    }
+
+    function requestMarketData() {
+        if (!socket || socket.readyState !== WebSocket.OPEN || !currentMarket) return;
+        digits = [];
+        socket.send(JSON.stringify({
+            ticks_history: currentMarket,
+            count: 200,
+            end: 'latest',
+            style: 'ticks',
+            req_id: 2
+        }));
+        socket.send(JSON.stringify({
+            ticks: currentMarket,
+            subscribe: 1,
+            req_id: 3
+        }));
+        updateDashboard();
     }
 
     function loadDerivMarkets(symbols) {
