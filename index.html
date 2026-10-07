@@ -778,6 +778,7 @@
         }
         if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
         if (liveWatchdogTimer) { clearTimeout(liveWatchdogTimer); liveWatchdogTimer = null; }
+        if (mt5AnalysisTimer) { clearInterval(mt5AnalysisTimer); mt5AnalysisTimer = null; }
         updateConnectionStatus('offline');
         setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
     }
