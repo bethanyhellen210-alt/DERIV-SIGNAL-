@@ -300,7 +300,7 @@
           <div class="sniper-controls">
             <div class="control-group">
               <label for="market">MARKET</label>
-              <select id="market"><option value="">CONNECTING TO DERIV...</option></select>
+              <select id="market"><option value="">SELECT MARKET</option><option value="1HZ100V">VOLATILITY 100 (1HZ100V)</option><option value="1HZ75V">VOLATILITY 75 (1HZ75V)</option><option value="1HZ50V">VOLATILITY 50 (1HZ50V)</option><option value="1HZ25V">VOLATILITY 25 (1HZ25V)</option><option value="R_100">VOLATILITY 100 (R_100)</option><option value="R_75">VOLATILITY 75 (R_75)</option><option value="R_50">VOLATILITY 50 (R_50)</option><option value="R_25">VOLATILITY 25 (R_25)</option></select>
             </div>
             <div class="control-group">
               <label for="contract">CONTRACT TYPE</label>
@@ -522,7 +522,7 @@
     window.onload = () => {
         try { initCharts(); } catch (err) { console.warn('[ELISY254] Chart init skipped:', err); }
         onContractChange();
-        startEngine();
+        updateRiskUI('Configure Sniper Entry, then press START ANALYSIS.');
     };
 
     function onContractChange() {
@@ -572,6 +572,19 @@
             },
             options
         });
+    }
+
+    function toggleAutoTrade() {
+        const enabled = !!document.getElementById('autoTrade')?.checked;
+        autoTradeEnabled = enabled;
+        const status = document.getElementById('tradeStatus');
+        if (status) status.textContent = enabled
+            ? 'Auto Trade ON. The analysis engine may prepare an execution after a confirmed setup and risk checks.'
+            : 'Auto Trade OFF. Analysis can run without preparing an execution.';
+        const info = document.getElementById('sniperRunInfo');
+        if (info && !running) info.textContent = enabled
+            ? 'AUTO TRADE is enabled. Press START ANALYSIS to begin a fresh session.'
+            : 'AUTO TRADE is off. Press START ANALYSIS to run analysis only.';
     }
 
     function startAnalysis() {
