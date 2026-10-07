@@ -202,12 +202,14 @@
         .badge-pass { background: #15803d; color: white; }
         .badge-fail { background: #b91c1c; color: white; }
         .badge-wait { background: #334155; color: white; }
-            .status{display:inline-block;margin:8px auto 0;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.6px}.status-live{background:#14532d;color:#86efac}.status-connecting,.status-reconnecting{background:#78350f;color:#fde68a}.status-offline{background:#450a0a;color:#fca5a5}\n    </style>
+            .status{display:inline-block;margin:8px auto 0;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.6px}.status-live{background:#14532d;color:#86efac}.status-connecting,.status-reconnecting{background:#78350f;color:#fde68a}.status-offline{background:#450a0a;color:#fca5a5}
+    </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="header">\n        <div id="connectionStatus" class="status status-offline">● OFFLINE</div>
+    <div class="header">
+        <div id="connectionStatus" class="status status-offline">● OFFLINE</div>
         <h1>ELISY254 DERIV SIGNAL ENGINE</h1>
         <p>LIVE DERIV TICK ANALYSIS • STATISTICAL SIGNAL FILTERS</p>
     </div>
@@ -395,7 +397,10 @@
     // ==========================================
     let socket = null;
     let running = false;
-    let digits = [];\n    let reconnectTimer = null;\n    let reconnectAttempts = 0;\n    let currentMarket = null;
+    let digits = [];
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    let currentMarket = null;
 
     const engine = new StrictQuantEngine();
     let parityChart, barrierChart;
@@ -524,7 +529,8 @@
             socket.close();
             socket = null;
         }
-        updateConnectionStatus('offline');\n        setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
+        updateConnectionStatus('offline');
+        setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
     }
 
     function updateDashboard() {
@@ -631,7 +637,7 @@
                 decision = 'BUY ODD';
                 confidence = 85;
                 filterStatus = 'PASS';
-                reason = `ODD MEAN REVERSION: ${evenStreak} consecutive Even ticks detected. Probability of parity continuation dropping below 3.12%.`;
+                reason = `ODD MEAN REVERSION: ${evenStreak} consecutive Even ticks detected. A parity streak alone is not treated as proof of continuation or reversal; it is only a secondary signal.`;
             } 
             else {
                 reason = `NO ODD ENTRY: Z-Score (${zScore.toFixed(2)}) is below statistical threshold (1.75). Distribution shows no true Odd edge.`;
