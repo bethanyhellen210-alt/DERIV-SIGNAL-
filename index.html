@@ -476,7 +476,7 @@
         updateConnectionStatus('connecting');
 
         try {
-            socket = new WebSocket('wss://ws.binaryws.com/websockets/v3?app_id=1089');
+            socket = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
         } catch (err) {
             updateConnectionStatus('reconnecting');
             scheduleReconnect();
@@ -491,6 +491,7 @@
             // Public market-data connection: no login/token required.
             socket.send(JSON.stringify({
                 active_symbols: 'brief',
+                product_type: 'basic',
                 req_id: 1
             }));
 
@@ -672,7 +673,7 @@
         }
 
         if (running && currentMarket) {
-            updateConnectionStatus('live');
+            updateConnectionStatus('connecting');
         }
     }
 
