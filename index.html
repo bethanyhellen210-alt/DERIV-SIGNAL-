@@ -266,12 +266,14 @@
             <div class="metric-row"><span>Digit Setup:</span><strong id="digitSetup">WAIT</strong></div>
         </div>
         <div class="card signal-engine forex-engine">
-            <h2>📈 LIVE MARKET DIRECTION</h2>
-            <p class="engine-subtitle">BUY / SELL MARKET DIRECTION</p>
+            <h2>📈 MT5 MARKET DIRECTION</h2>
+            <p class="engine-subtitle">REAL MT5 CANDLE ANALYSIS</p>
             <div class="big-signal" id="forexSignal">WAITING</div>
-            <div class="signal-detail" id="forexReason">Uses live Deriv quote data for market direction.</div>
+            <div class="signal-detail" id="forexReason">Waiting for real MT5 candle data.</div>
+            <div class="metric-row"><span>MT5 Symbol:</span><strong id="mt5SymbolLabel">EURUSD</strong></div>
             <div class="metric-row"><span>Direction:</span><strong id="forexDirection">-</strong></div>
             <div class="metric-row"><span>Trend Score:</span><strong id="forexScore">-</strong></div>
+            <div class="metric-row"><span>Timeframes:</span><strong>M5 · M15 · H1</strong></div>
         </div>
     </div>
 
@@ -472,6 +474,7 @@
         updateConnectionStatus('connecting');
         connectSocket();
         updateDashboard();
+        startMT5Analysis();
     }
     function connectSocket() {
         if (!running) return;
@@ -779,62 +782,87 @@
         setSignalUI('STOPPED', 0, 'WAIT', 'Engine suspended by user.', 'var(--text-muted)');
     }
 
+    let mt5AnalysisTimer = null;
+    let mt5AnalysisBusy = false;
+
+    async function updateMT5Signal() {
+        const forexEl = document.getElementById('forexSignal');
+        const forexReason = document.getElementById('forexReason');
+        const forexDir = document.getElementById('forexDirection');
+        const forexScore = document.getElementById('forexScore');
+        const symbolLabel = document.getElementById('mt5SymbolLabel');
+        if (!forexEl || mt5AnalysisBusy) return;
+
+        mt5AnalysisBusy = true;
+        forexEl.textContent = 'LOADING';
+        forexDir.textContent = '-';
+        forexScore.textContent = '-';
+        forexReason.textContent = 'Reading real MT5 M5, M15 and H1 candles...';
+
+        try {
+            const response = await fetch('/api/mt5/candles?symbol=EURUSD', { cache: 'no-store' });
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.message || 'MT5 candle service is not configured.');
+
+            if (symbolLabel) symbolLabel.textContent = data.symbol;
+            forexEl.textContent = data.signal;
+            forexDir.textContent = data.signal;
+            forexScore.textContent = data.score;
+            forexEl.style.color = data.signal === 'BUY'
+                ? 'var(--accent-green)'
+                : data.signal === 'SELL'
+                    ? 'var(--accent-red)'
+                    : 'var(--text-muted)';
+            forexReason.textContent = data.reason;
+        } catch (err) {
+            forexEl.textContent = 'WAITING';
+            forexDir.textContent = '-';
+            forexScore.textContent = '-';
+            forexReason.textContent = err.message || 'MT5 candle data unavailable.';
+        } finally {
+            mt5AnalysisBusy = false;
+        }
+    }
+
+    function startMT5Analysis() {
+        updateMT5Signal();
+        if (mt5AnalysisTimer) clearInterval(mt5AnalysisTimer);
+        mt5AnalysisTimer = setInterval(updateMT5Signal, 15000);
+    }
+
     function updateDualSignalBoxes() {
         const n = digits.length;
         const digitEl = document.getElementById('digitSignal');
         const digitPred = document.getElementById('digitPrediction');
         const predicted = document.getElementById('predictedDigit');
         const digitSetup = document.getElementById('digitSetup');
-        const forexEl = document.getElementById('forexSignal');
-        const forexReason = document.getElementById('forexReason');
-        const forexDir = document.getElementById('forexDirection');
-        const forexScore = document.getElementById('forexScore');
-        if (!digitEl || !forexEl) return;
+        if (!digitEl) return;
 
+        // Digit engine is deliberately isolated from MT5.
         if (n < 30) {
             digitEl.textContent = 'WAITING';
-            digitPred.textContent = 'Waiting for 30+ live ticks...';
+            digitPred.textContent = 'Waiting for 30+ live Deriv ticks...';
             predicted.textContent = '-';
             digitSetup.textContent = 'WARMUP';
         } else {
             const counts = Array(10).fill(0);
             digits.forEach(d => counts[d]++);
             let hot = 0;
-            for (let d=1; d<10; d++) if (counts[d] > counts[hot]) hot = d;
+            for (let d = 1; d < 10; d++) if (counts[d] > counts[hot]) hot = d;
             const recent = digits.slice(-10);
             const recentCounts = Array(10).fill(0);
             recent.forEach(d => recentCounts[d]++);
             let candidate = hot;
-            for (let d=0; d<10; d++) if (recentCounts[d] > recentCounts[candidate]) candidate = d;
-            const freq = counts[candidate] / n;
+            for (let d = 0; d < 10; d++) {
+                if (recentCounts[d] > recentCounts[candidate]) candidate = d;
+            }
             const recentFreq = recentCounts[candidate] / recent.length;
             predicted.textContent = candidate;
             digitEl.textContent = 'DIGIT ' + candidate;
             digitSetup.textContent = recentFreq >= 0.3 ? 'STRONG' : 'WATCH';
-            digitPred.textContent = 'Live digit signal analysis.';
+            digitPred.textContent = 'Live Deriv tick digit analysis.';
             digitEl.style.color = recentFreq >= 0.3 ? 'var(--accent-green)' : 'var(--accent-blue)';
         }
-
-        const market = String(currentMarket || '').toUpperCase();
-        const isForex = /^FRX|^FOREX|USD|EUR|GBP|JPY|AUD|CAD|CHF|NZD/.test(market) && !/VOLATILITY|BOOM|CRASH|STEP|JUMP/.test(market);
-        if (!isForex || n < 30) {
-            forexEl.textContent = isForex ? 'WAITING' : 'SELECT FOREX';
-            forexDir.textContent = '-';
-            forexScore.textContent = '-';
-            forexReason.textContent = isForex ? 'Waiting for enough live price ticks for trend analysis.' : 'Select a live Deriv Forex symbol for price-direction analysis.';
-            return;
-        }
-        const values = digits.map(d => d);
-        const fast = values.slice(-10).reduce((a,b)=>a+b,0)/10;
-        const slow = values.slice(-30).reduce((a,b)=>a+b,0)/30;
-        const slope = values[values.length-1] - values[values.length-11];
-        const score = Math.max(-100, Math.min(100, Math.round((fast-slow)*20 + slope*8)));
-        const direction = score >= 12 ? 'BUY' : score <= -12 ? 'SELL' : 'WAIT';
-        forexEl.textContent = direction;
-        forexDir.textContent = direction;
-        forexScore.textContent = score;
-        forexEl.style.color = direction === 'BUY' ? 'var(--accent-green)' : direction === 'SELL' ? 'var(--accent-red)' : 'var(--text-muted)';
-        forexReason.textContent = 'Live market-direction signal.';
     }
 
     function updateDashboard() {
