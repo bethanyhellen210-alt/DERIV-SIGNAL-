@@ -204,6 +204,9 @@
         .badge-wait { background: #334155; color: white; }
             .signal-engine{min-height:250px;text-align:center}.engine-subtitle{font-size:.72rem;color:var(--text-muted);margin:6px 0 14px;letter-spacing:.8px}.big-signal{font-size:2.35rem;font-weight:900;letter-spacing:1px;margin:12px 0}.signal-detail{min-height:48px;padding:10px;background:#0b0f19;border-radius:8px;color:#cbd5e1;font-size:.86rem;line-height:1.35}.digit-engine{border-top:3px solid var(--accent-blue)}.forex-engine{border-top:3px solid var(--accent-green)}
         .account-live{border-top:3px solid var(--accent-green)}
+        .risk-control{border-top:3px solid var(--accent-yellow)}
+        .risk-control h3{color:var(--accent-yellow)}
+        input[type="checkbox"]{accent-color:var(--accent-green);width:18px;height:18px}
         input[type="checkbox"]{accent-color:var(--accent-green);width:18px;height:18px}
         .status{display:inline-block;margin:8px auto 0;padding:5px 10px;border-radius:999px;font-size:.72rem;font-weight:800;letter-spacing:.6px}.status-live{background:#14532d;color:#86efac}.status-connecting,.status-reconnecting{background:#78350f;color:#fde68a}.status-offline{background:#450a0a;color:#fca5a5}
     </style>
@@ -245,6 +248,25 @@
             <label style="display:flex;gap:8px;align-items:center"><input id="realTradeConfirm" type="checkbox"> I CONFIRM REAL-MONEY TRADING</label>
         </div>
         <div id="tradeStatus" class="signal-detail" style="margin-top:10px">Auto Trade OFF. Connect a Deriv account first.</div>
+    </div>
+
+    <div class="card risk-control" id="riskControlCard">
+        <h3>RISK CONTROL</h3>
+        <div class="grid-2" style="margin-top:12px;gap:12px;">
+            <div>
+                <div class="metric-row"><span>Bankroll</span><strong id="riskBankroll">$0.00</strong></div>
+                <div class="metric-row"><span>Risk / Trade</span><strong>1.00%</strong></div>
+                <div class="metric-row"><span>Max Session Loss</span><strong id="riskMaxLoss">$0.00</strong></div>
+                <div class="metric-row"><span>Session P/L</span><strong id="riskPnL">$0.00</strong></div>
+            </div>
+            <div>
+                <div class="metric-row"><span>Trades</span><strong id="riskTrades">0 / 10</strong></div>
+                <div class="metric-row"><span>Consecutive Losses</span><strong id="riskLosses">0 / 3</strong></div>
+                <div class="metric-row"><span>Stake Cap</span><strong id="riskStake">$0.00</strong></div>
+                <div class="metric-row"><span>Risk Gate</span><strong id="riskGate">WAIT</strong></div>
+            </div>
+        </div>
+        <div id="riskReason" class="signal-detail" style="margin-top:10px;">Connect Deriv to load the real account balance.</div>
     </div>
 
     <!-- Controls Bar -->
@@ -929,20 +951,21 @@
             return score >= 0.58 ? { signal: 'ODD', digit: null, score } : { signal: 'WAIT', digit: null, score };
         }
 
-        if (contract === 'OVER') {
-            const predicate = d => d > barrier;
-            const score = rate(predicate) * 0.65 + recentRate(predicate) * 0.35;
-            return score >= 0.60
-                ? { signal: 'OVER ' + barrier, digit: null, score }
-                : { signal: 'WAIT', digit: null, score };
-        }
-
-        if (contract === 'UNDER') {
-            const predicate = d => d < barrier;
-            const score = rate(predicate) * 0.65 + recentRate(predicate) * 0.35;
-            return score >= 0.60
-                ? { signal: 'UNDER ' + barrier, digit: null, score }
-                : { signal: 'WAIT', digit: null, score };
+        if (contract === 'OVER' || contract === 'UNDER') {
+            const candidates = [];
+            for (let b = 0; b <= 8; b++) {
+                const isOver = contract === 'OVER';
+                const predicate = isOver ? (d => d > b) : (d => d < b);
+                const baseline = isOver ? (9 - b) / 10 : b / 10;
+                if (baseline < 0.50) continue;
+                const score = rate(predicate) * 0.65 + recentRate(predicate) * 0.35;
+                const edge = score - baseline;
+                if (score >= 0.62 && edge >= 0.08) candidates.push({b,score,edge,baseline});
+            }
+            candidates.sort((a,b)=>(b.edge-a.edge)||(b.score-a.score));
+            if(!candidates.length) return {signal:'WAIT',digit:null,score:0,riskBlocked:true,reason:contract+' risk filter rejected all barriers.'};
+            const selected=candidates.find(x=>x.b===barrier)||candidates[0];
+            return {signal:contract+' '+selected.b,digit:null,score:selected.score,edge:selected.edge,baseline:selected.baseline,autoBarrier:selected.b!==barrier};
         }
 
         if (contract === 'MATCH') {
@@ -994,6 +1017,14 @@
 
         const candidate = getContractCandidate();
         if (!candidate) return;
+        if (!applyRiskToSignal(candidate)) {
+            digitSignalState.lockedSignal = null;
+            digitSignalState.lockedDigit = null;
+            digitSignalState.candidateSignal = 'WAIT';
+            digitSignalState.candidateDigit = candidate.digit ?? null;
+            digitSignalState.candidateConfirmations = 0;
+            return;
+        }
 
         if (
             candidate.signal === digitSignalState.candidateSignal &&
@@ -1306,6 +1337,41 @@
         }
     }
 
+
+    // ==========================================
+    // RISK CONTROL
+    // ==========================================
+    const riskState = {
+        bankroll: 0, riskPct: 0.01, maxLossPct: 0.05, maxTrades: 10,
+        maxConsecutiveLosses: 3, trades: 0, pnl: 0, consecutiveLosses: 0
+    };
+    function riskStake(){ return riskState.bankroll>0 ? Math.min(riskState.bankroll*riskState.riskPct,1.00) : 0; }
+    function riskGate(candidate){
+        if(!candidate || candidate.signal==='WAIT') return {allowed:false,reason:candidate?.reason||'No qualifying setup.'};
+        if(!riskState.bankroll) return {allowed:false,reason:'Connect a Deriv account before trading.'};
+        if(riskState.trades>=riskState.maxTrades) return {allowed:false,reason:'Maximum 10 trades reached.'};
+        if(riskState.pnl<=-(riskState.bankroll*riskState.maxLossPct)) return {allowed:false,reason:'Maximum 5% session loss reached.'};
+        if(riskState.consecutiveLosses>=riskState.maxConsecutiveLosses) return {allowed:false,reason:'Maximum 3 consecutive losses reached.'};
+        return {allowed:true,reason:'Risk limits clear.'};
+    }
+    function updateRiskUI(message){
+        const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+        set('riskBankroll','$'+Number(riskState.bankroll||0).toFixed(2));
+        set('riskMaxLoss','$'+(Number(riskState.bankroll||0)*riskState.maxLossPct).toFixed(2));
+        set('riskPnL',(riskState.pnl<0?'-$':'$')+Math.abs(riskState.pnl).toFixed(2));
+        set('riskTrades',riskState.trades+' / '+riskState.maxTrades);
+        set('riskLosses',riskState.consecutiveLosses+' / '+riskState.maxConsecutiveLosses);
+        set('riskStake','$'+riskStake().toFixed(2));
+        const g=document.getElementById('riskGate');if(g){g.textContent=riskState.bankroll?'READY':'WAIT';g.style.color=riskState.bankroll?'var(--accent-green)':'var(--accent-yellow)';}
+        const r=document.getElementById('riskReason');if(r&&message)r.textContent=message;
+    }
+    function applyRiskToSignal(candidate){
+        const gate=riskGate(candidate);
+        const e=document.getElementById('riskGate');if(e){e.textContent=gate.allowed?'READY':'BLOCKED';e.style.color=gate.allowed?'var(--accent-green)':'var(--accent-red)';}
+        const r=document.getElementById('riskReason');if(r)r.textContent=gate.reason;
+        return gate.allowed;
+    }
+
     // ==========================================
     // DERIV OAUTH ACCOUNT + BALANCE + AUTO TRADE
     // ==========================================
@@ -1398,78 +1464,3 @@
                     updateRiskUI('Contract closed • '+(p>=0?'+':'')+p.toFixed(2)+' '+(d.proposal_open_contract.currency||'USD'));
                     autoTradeBusy=false;
                 }
-                if(d.error){
-                    autoTradeBusy=false;
-                    document.getElementById('tradeStatus').textContent='DERIV TRADE ERROR • '+(d.error.message||'Request rejected');
-                }
-            };
-            derivAuthSocket.onerror=()=>document.getElementById('tradeStatus').textContent='Deriv trading socket error.';
-            derivAuthSocket.onclose=()=>{ if(selectedDerivAccount) document.getElementById('tradeStatus').textContent='Deriv trading socket disconnected.'; };
-        }catch(e){
-            document.getElementById('tradeStatus').textContent='Trading connection failed • '+e.message;
-        }
-    }
-
-    function toggleAutoTrade(){
-        const box=document.getElementById('autoTrade');
-        autoTradeEnabled=!!box.checked;
-        if(!autoTradeEnabled){document.getElementById('tradeStatus').textContent='Auto Trade OFF.';return;}
-        if(!selectedDerivAccount){box.checked=false;autoTradeEnabled=false;document.getElementById('tradeStatus').textContent='Connect to Deriv before enabling Auto Trade.';return;}
-        if(selectedDerivAccount.account_type==='real' && !document.getElementById('realTradeConfirm').checked){
-            box.checked=false;autoTradeEnabled=false;document.getElementById('tradeStatus').textContent='REAL ACCOUNT: tick I CONFIRM REAL-MONEY TRADING first.';return;
-        }
-        document.getElementById('tradeStatus').textContent='AUTO TRADE ARMED • waiting for a locked qualifying signal.';
-    }
-
-    function autoTradeRiskGate(candidate){
-        if(!autoTradeEnabled || !selectedDerivAccount) return {allowed:false,reason:'Auto Trade OFF'};
-        if(selectedDerivAccount.account_type==='real' && !document.getElementById('realTradeConfirm').checked) return {allowed:false,reason:'Real-money confirmation required.'};
-        if(autoTradeState.trades>=autoTradeState.maxTrades) return {allowed:false,reason:'Maximum 10 trades reached.'};
-        if(autoTradeState.consecutiveLosses>=autoTradeState.maxConsecutiveLosses) return {allowed:false,reason:'3 consecutive losses reached.'};
-        if(autoTradeState.pnl<=-(riskState.bankroll*autoTradeState.maxLossPct)) return {allowed:false,reason:'5% session loss limit reached.'};
-        if(!candidate || candidate.signal==='WAIT') return {allowed:false,reason:'No qualifying signal.'};
-        const stake=Math.min(Math.max(0.35,riskState.bankroll*0.01),1.00);
-        if(riskState.bankroll<stake) return {allowed:false,reason:'Balance is below the configured stake.'};
-        return {allowed:true,stake};
-    }
-
-    function contractFromSignal(signal){
-        const s=String(signal||'');
-        if(s==='EVEN') return {type:'DIGITEVEN'};
-        if(s==='ODD') return {type:'DIGITODD'};
-        let m=s.match(/^OVER (\\d)$/); if(m) return {type:'DIGITOVER',barrier:m[1]};
-        m=s.match(/^UNDER (\\d)$/); if(m) return {type:'DIGITUNDER',barrier:m[1]};
-        m=s.match(/^MATCH (\\d)$/); if(m) return {type:'DIGITMATCH',barrier:m[1]};
-        m=s.match(/^DIFFER (\\d)$/); if(m) return {type:'DIGITDIFF',barrier:m[1]};
-        return null;
-    }
-
-    function maybeAutoTrade(){
-        const signal=digitSignalState.lockedSignal;
-        if(!signal || signal==='WAIT') return;
-        const key=signal+'@'+digitSignalState.lockUntilTick+'@'+currentMarket;
-        if(key===lastAutoTradeKey || autoTradeBusy) return;
-        const spec=contractFromSignal(signal);
-        if(!spec) return;
-        const gate=autoTradeRiskGate(spec);
-        if(!gate.allowed){if(autoTradeEnabled)document.getElementById('tradeStatus').textContent='AUTO TRADE BLOCKED • '+gate.reason;return;}
-        if(!derivAuthSocket || derivAuthSocket.readyState!==WebSocket.OPEN){document.getElementById('tradeStatus').textContent='AUTO TRADE WAITING • Deriv account socket not ready.';return;}
-        lastAutoTradeKey=key; autoTradeBusy=true;
-        const req={proposal:1,amount:gate.stake,basis:'stake',contract_type:spec.type,currency:selectedDerivAccount.currency||'USD',duration:1,duration_unit:'t',underlying_symbol:currentMarket,subscribe:1,req_id:++tradeReqId};
-        if(spec.barrier!==undefined) req.barrier=spec.barrier;
-        derivAuthSocket.send(JSON.stringify(req));
-        document.getElementById('tradeStatus').textContent='AUTO TRADE • requesting '+signal+' proposal at '+gate.stake.toFixed(2)+' '+(selectedDerivAccount.currency||'USD');
-        autoTradeState.trades++;
-    }
-
-    const originalUpdateDualSignalBoxes=updateDualSignalBoxes;
-    updateDualSignalBoxes=function(){
-        originalUpdateDualSignalBoxes();
-        maybeAutoTrade();
-    };
-
-    loadDerivAccountConnection();
-</script>
-
-</body>
-</html>
